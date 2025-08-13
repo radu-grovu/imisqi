@@ -13,11 +13,11 @@
     "jsx": "preserve",
     "incremental": true,
     "types": ["node"],
-    "baseUrl": ".",
+    "baseUrl": "src",
     "paths": {
-      "@/*": ["src/*"],
-      "@/lib/*": ["src/lib/*"],
-      "@/utils/*": ["src/utils/*"]
+      "@/*": ["*"],
+      "@lib/*": ["lib/*"],
+      "@utils/*": ["utils/*"]
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx"],
