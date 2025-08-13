@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { supabaseBrowser } from '@/lib/supabaseBrowser';
+import { supabaseBrowser } from '../../../lib/supabaseBrowser';
 import SurveyForm from '@/components/SurveyForm';
 
 export default function SurveyPage({ params, searchParams }: any) {
