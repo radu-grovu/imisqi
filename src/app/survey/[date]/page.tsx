@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { supabaseBrowser } from '../../../lib/supabaseBrowser';
-import SurveyForm from '@/components/SurveyForm';
+import SurveyForm from '../../../components/SurveyForm';
 
 export default function SurveyPage({ params, searchParams }: any) {
   const date = params.date; // YYYY-MM-DD
