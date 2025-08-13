@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { supabaseBrowser } from '@/lib/supabaseBrowser';
+import { supabaseBrowser } from '../lib/supabaseBrowser';
 
 export default function SurveyForm({ campaignId, date }: { campaignId: string; date: string; }) {
   const [loading, setLoading] = useState(false);
