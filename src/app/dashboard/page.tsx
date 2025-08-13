@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { supabaseBrowser } from '@/lib/supabaseBrowser';
-import { campaignDates } from '@/utils/date';
+import { supabaseBrowser } from '../../lib/supabaseBrowser'
+import { campaignDates } from '../../utils/date'
 
 type Campaign = { id: string; name: string; start_date: string; days: number };
 
