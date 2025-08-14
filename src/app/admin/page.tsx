@@ -363,12 +363,17 @@ type FlatRow = {
   survey_date: string;
   initials: string;
   patient_label: string;
-  reason: string | null;
+  reason_category: string | null;
+  reason_detail: string | null;
   comment: string | null;
   total_delayed: number | null;
 };
 
-function parseAnswers(ans: any): { total_delayed: number; patients: any[]; general_comments: string | null } {
+function parseAnswers(ans: any): {
+  total_delayed: number;
+  patients: Array<{ label?: string; reason?: string; reason_category?: string; reason_detail?: string; comment?: string }>;
+  general_comments: string | null;
+} {
   if (!ans || typeof ans !== 'object') return { total_delayed: 0, patients: [], general_comments: null };
   const total = typeof ans.total_delayed === 'number' ? ans.total_delayed : (Array.isArray(ans.patients) ? ans.patients.length : 0);
   return {
@@ -379,7 +384,7 @@ function parseAnswers(ans: any): { total_delayed: number; patients: any[]; gener
 }
 
 function toCSV(rows: FlatRow[]): string {
-  const headers = ['survey_date','initials','patient_label','reason','comment','total_delayed'];
+  const headers = ['survey_date','initials','patient_label','reason_category','reason_detail','comment','total_delayed'];
   const escape = (v: any) => {
     if (v === null || v === undefined) return '';
     const s = String(v).replace(/"/g, '""');
@@ -387,7 +392,7 @@ function toCSV(rows: FlatRow[]): string {
   };
   const lines = [headers.join(',')];
   for (const r of rows) {
-    lines.push([r.survey_date, r.initials, r.patient_label, r.reason ?? '', r.comment ?? '', r.total_delayed ?? ''].map(escape).join(','));
+    lines.push([r.survey_date, r.initials, r.patient_label, r.reason_category ?? '', r.reason_detail ?? '', r.comment ?? '', r.total_delayed ?? ''].map(escape).join(','));
   }
   return lines.join('\n');
 }
@@ -453,38 +458,61 @@ function AnalyticsViewer() {
       const { data: resps, error: respErr } = await respQuery;
       if (respErr) { setFlat([]); return; }
 
-      // 3) Flatten patients
+           // 3) Flatten patients
       const flatRows: FlatRow[] = [];
       let totalPatients = 0;
       let responsesCount = 0;
-      const reasonCounts: Record<string, number> = {};
+      const reasonCounts: Record<string, number> = {}; // key = "Category — Detail"
 
       for (const r of (resps || [])) {
         const initials = idToInitials.get(r.profile_id) || '';
         const parsed = parseAnswers(r.answers);
         responsesCount++;
+
         const patients = parsed.patients.length ? parsed.patients : [];
         totalPatients += patients.length;
 
         if (patients.length === 0) {
-          // still collect a row with total=0 for completeness
           flatRows.push({
             survey_date: r.survey_date,
             initials,
             patient_label: '',
-            reason: null,
+            reason_category: null,
+            reason_detail: null,
             comment: null,
             total_delayed: parsed.total_delayed ?? 0,
           });
         } else {
           patients.forEach((p: any, idx: number) => {
-            const reason = (p?.reason ?? null) as string | null;
-            if (reason) reasonCounts[reason] = (reasonCounts[reason] || 0) + 1;
+            // backward compatibility: older rows may have only p.reason (string)
+            const cat = (typeof p.reason_category === 'string' && p.reason_category.trim()) ? p.reason_category.trim() : null;
+            const detRaw = (typeof p.reason_detail === 'string' && p.reason_detail.trim()) ? p.reason_detail.trim() : null;
+            const fallback = (typeof p.reason === 'string' && p.reason.trim()) ? p.reason.trim() : null;
+
+            let reasonCategory = cat;
+            let reasonDetail = detRaw;
+
+            if (!reasonCategory && fallback) {
+              // try to split "Category — Detail" if someone migrated CSVs manually
+              const parts = fallback.split('—').map((s: string) => s.trim());
+              if (parts.length >= 2) {
+                reasonCategory = parts[0] || null;
+                reasonDetail = parts.slice(1).join(' — ') || null;
+              } else {
+                reasonCategory = 'Unspecified';
+                reasonDetail = fallback;
+              }
+            }
+
+            const key = `${reasonCategory ?? 'Unspecified'} — ${reasonDetail ?? 'Unspecified'}`;
+            reasonCounts[key] = (reasonCounts[key] || 0) + 1;
+
             flatRows.push({
               survey_date: r.survey_date,
               initials,
               patient_label: p?.label || `Patient ${idx+1}`,
-              reason,
+              reason_category: reasonCategory,
+              reason_detail: reasonDetail,
               comment: p?.comment ?? null,
               total_delayed: parsed.total_delayed ?? patients.length,
             });
@@ -496,6 +524,7 @@ function AnalyticsViewer() {
 
       setFlat(flatRows.sort((a,b) => a.survey_date.localeCompare(b.survey_date) || a.initials.localeCompare(b.initials)));
       setSummary({ totalPatients, responsesCount, avgPerResponse, reasons: reasonCounts });
+
     } finally {
       setLoading(false);
     }
@@ -561,9 +590,11 @@ function AnalyticsViewer() {
                 <th align="left">Date</th>
                 <th align="left">Initials</th>
                 <th align="left">Patient</th>
-                <th align="left">Reason</th>
+                <th align="left">Reason category</th>
+                <th align="left">Detail</th>
                 <th align="left">Comment</th>
                 <th align="right">Total Delayed (that response)</th>
+
               </tr>
             </thead>
             <tbody>
@@ -572,11 +603,13 @@ function AnalyticsViewer() {
                   <td>{r.survey_date}</td>
                   <td>{r.initials}</td>
                   <td>{r.patient_label}</td>
-                  <td>{r.reason ?? ''}</td>
+                  <td>{r.reason_category ?? ''}</td>
+                  <td>{r.reason_detail ?? ''}</td>
                   <td style={{ maxWidth: 380, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {r.comment ?? ''}
+                  {r.comment ?? ''}
                   </td>
                   <td align="right">{r.total_delayed ?? ''}</td>
+
                 </tr>
               ))}
               {flat.length === 0 && (
