@@ -28,7 +28,7 @@ export default function SurveyByDatePage() {
   return (
     <main style={{ padding: 16 }}>
       <h1>Survey for {date}</h1>
-      <SurveyForm date={date} campaignId="manual" />
+      <SurveyForm date={date} />
     </main>
   );
 }
