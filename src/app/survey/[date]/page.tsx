@@ -1,25 +1,34 @@
 'use client';
+
 import { useEffect, useState } from 'react';
+import { useRouter, useParams } from 'next/navigation';
 import { supabaseBrowser } from '../../../lib/supabaseBrowser';
 import SurveyForm from '../../../components/SurveyForm';
 
-export default function SurveyPage({ params, searchParams }: any) {
-  const date = params.date; // YYYY-MM-DD
-  const campaignId = String(searchParams.campaign || '');
-  const [user, setUser] = useState<any>(null);
+export default function SurveyByDatePage() {
+  const router = useRouter();
+  const params = useParams<{ date: string }>();
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    supabaseBrowser.auth.getUser().then(({ data }) => {
-      if (!data.user) window.location.href = '/'; else setUser(data.user);
-    });
-  }, []);
+    async function check() {
+      const { data } = await supabaseBrowser.auth.getSession();
+      if (!data.session) {
+        router.replace('/');
+        return;
+      }
+      setReady(true);
+    }
+    check();
+  }, [router]);
 
-  if (!campaignId) return <p>Missing campaign.</p>;
-  if (!user) return <p>Loading…</p>;
+  if (!ready) return <p style={{ padding: 16 }}>Loading…</p>;
+
+  const date = params?.date; // YYYY-MM-DD
   return (
-    <div>
-      <h2>Survey for {date}</h2>
-      <SurveyForm campaignId={campaignId} date={date} />
-    </div>
+    <main style={{ padding: 16 }}>
+      <h1>Survey for {date}</h1>
+      <SurveyForm date={date} />
+    </main>
   );
 }
