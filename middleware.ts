@@ -1,35 +1,35 @@
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
+/**
+ * Hard gate: unless the gate cookie is present, redirect to /gate
+ * for ALL routes except the gate page itself, the gate API, and static assets.
+ */
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // Let through gate page and API endpoint without redirect
-  if (pathname.startsWith('/gate') || pathname.startsWith('/api/gate')) {
-    return NextResponse.next();
-  }
-
-  // Allow static assets
-  if (
+  // Always allow these paths without a cookie
+  const allow =
+    pathname === '/gate' ||
+    pathname.startsWith('/api/gate') ||
     pathname.startsWith('/_next') ||
-    pathname.startsWith('/favicon.ico') ||
-    pathname.startsWith('/robots.txt') ||
-    pathname.startsWith('/sitemap.xml')
-  ) {
-    return NextResponse.next();
-  }
+    pathname === '/favicon.ico' ||
+    pathname === '/robots.txt' ||
+    pathname === '/sitemap.xml';
 
-  // If no gate cookie, force redirect to /gate
-  const cookie = req.cookies.get('gate_ok')?.value;
-  if (cookie !== '1') {
+  if (allow) return NextResponse.next();
+
+  // Require cookie for everything else
+  const passed = req.cookies.get('gate_ok')?.value === '1';
+  if (!passed) {
     const url = req.nextUrl.clone();
     url.pathname = '/gate';
+    url.search = ''; // drop any query parameters
     return NextResponse.redirect(url);
   }
 
   return NextResponse.next();
 }
 
-export const config = {
-  matcher: '/:path*', // Apply to all routes
-};
+// Apply to ALL routes; filtering is done inside the middleware.
+export const config = { matcher: '/:path*' };
