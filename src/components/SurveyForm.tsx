@@ -79,4 +79,46 @@ export default function SurveyForm({ date, campaignId }: SurveyFormProps) {
         <div style={{ marginBottom: 4 }}>Shift</div>
         <select
           value={shift}
-          onCh
+          onChange={(e) => setShift(e.target.value as Option)}
+          required
+          style={{ padding: 8, fontSize: 16, width: '100%' }}
+        >
+          <option value="">Select shift…</option>
+          <option value="day">Day</option>
+          <option value="evening">Evening</option>
+          <option value="night">Night</option>
+        </select>
+      </label>
+
+      <label>
+        <div style={{ marginBottom: 4 }}>Any delays or barriers today?</div>
+        <textarea
+          value={delays}
+          onChange={(e) => setDelays(e.target.value)}
+          rows={4}
+          placeholder="Briefly describe avoidable delays, handoffs, consults, imaging, discharge barriers, etc."
+          style={{ padding: 8, fontSize: 16, width: '100%' }}
+        />
+      </label>
+
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <input
+          type="checkbox"
+          checked={completed}
+          onChange={(e) => setCompleted(e.target.checked)}
+        />
+        Mark today as completed
+      </label>
+
+      <button
+        type="submit"
+        disabled={submitting}
+        style={{ padding: '10px 14px', fontSize: 16, width: 160 }}
+      >
+        {submitting ? 'Saving…' : 'Save'}
+      </button>
+
+      {msg && <p style={{ marginTop: 4, color: msg.startsWith('Saved') ? 'green' : 'crimson' }}>{msg}</p>}
+    </form>
+  );
+}
