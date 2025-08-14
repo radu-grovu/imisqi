@@ -1,70 +1,82 @@
 'use client';
-import { useState } from 'react';
+
+import { useEffect, useState } from 'react';
 import { supabaseBrowser } from '../lib/supabaseBrowser';
 
-export default function SurveyForm({ campaignId, date }: { campaignId: string; date: string; }) {
-  const [loading, setLoading] = useState(false);
-  const [done, setDone] = useState(false);
+type Option = '' | 'day' | 'evening' | 'night';
 
-  async function submit(e: React.FormEvent<HTMLFormElement>) {
+interface SurveyFormProps {
+  date: string;           // YYYY-MM-DD
+  campaignId?: string;    // now optional
+}
+
+export default function SurveyForm({ date, campaignId }: SurveyFormProps) {
+  const [shift, setShift] = useState<Option>('');
+  const [delays, setDelays] = useState('');           // free text
+  const [completed, setCompleted] = useState(false);  // e.g., finished notes/rounds, etc.
+  const [submitting, setSubmitting] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
+
+  // Resolve an active campaign id or default to "manual"
+  const activeCampaignId = campaignId ?? 'manual';
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const { data } = await supabaseBrowser.auth.getSession();
+      if (mounted) setUserId(data.session?.user?.id ?? null);
+    })();
+    return () => { mounted = false; };
+  }, []);
+
+  async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setLoading(true);
-    const formData = new FormData(e.currentTarget);
-    const didDelay = formData.get('didDelay') === 'yes';
-    const reason = String(formData.get('reason') || '');
-    const days = String(formData.get('days') || '0');
-    const comments = String(formData.get('comments') || '');
+    setMsg(null);
 
-    const { data: { user } } = await supabaseBrowser.auth.getUser();
-    if (!user) { alert('Please sign in'); setLoading(false); return; }
+    if (!userId) {
+      setMsg('You must be signed in to submit the survey.');
+      return;
+    }
+    if (!shift) {
+      setMsg('Please select your shift.');
+      return;
+    }
 
-    const answers = { didDelay, reason, days, comments };
-    const { error } = await supabaseBrowser.from('responses').upsert({
-      campaign_id: campaignId,
-      profile_id: user.id,
-      survey_date: date,
-      answers
-    });
-    setLoading(false);
-    if (error) alert(error.message); else setDone(true);
+    setSubmitting(true);
+    try {
+      // Save a single row per user/date; upsert avoids dupes if they re-submit
+      const { error } = await supabaseBrowser
+        .from('responses')
+        .upsert(
+          {
+            user_id: userId,
+            date,                                  // stored as date or text (YYYY-MM-DD)
+            campaign_id: activeCampaignId,
+            answers: {
+              shift,
+              delays,
+              completed,
+            },
+            submitted_at: new Date().toISOString(),
+          },
+          { onConflict: 'user_id,date' } // requires a unique index on (user_id, date)
+        );
+
+      if (error) {
+        setMsg(error.message);
+        return;
+      }
+      setMsg('Saved. Thank you!');
+    } finally {
+      setSubmitting(false);
+    }
   }
 
-  if (done) return <p style={{ color: 'green' }}>Thanks — response saved.</p>;
-
   return (
-    <form onSubmit={submit} style={{ display: 'grid', gap: 12 }}>
-      <div>
-        <label><strong>Was discharge delayed today?</strong></label><br/>
-        <label><input type="radio" name="didDelay" value="yes" required /> Yes</label>
-        {' '}
-        <label><input type="radio" name="didDelay" value="no" required /> No</label>
-      </div>
-      <div>
-        <label><strong>Primary reason (if delayed)</strong></label><br/>
-        <select name="reason" defaultValue="">
-          <option value="">— Select —</option>
-          <option>Awaiting diagnostic test result</option>
-          <option>Awaiting specialist consult</option>
-          <option>Awaiting placement/transfer</option>
-          <option>Awaiting family meeting</option>
-          <option>Awaiting procedure</option>
-          <option>Other</option>
-        </select>
-      </div>
-      <div>
-        <label><strong>Estimated avoidable days</strong></label><br/>
-        <select name="days" defaultValue="0">
-          <option value="0">0</option>
-          <option value="0.5">0.5</option>
-          <option value="1">1</option>
-          <option value=">1">&gt;1</option>
-        </select>
-      </div>
-      <div>
-        <label><strong>Comments (optional)</strong></label><br/>
-        <textarea name="comments" rows={3} placeholder="Notes or context" />
-      </div>
-      <button type="submit" disabled={loading}>{loading ? 'Saving…' : 'Submit'}</button>
-    </form>
-  );
-}
+    <form onSubmit={onSubmit} style={{ display: 'grid', gap: 12, maxWidth: 560 }}>
+      <label>
+        <div style={{ marginBottom: 4 }}>Shift</div>
+        <select
+          value={shift}
+          onCh
