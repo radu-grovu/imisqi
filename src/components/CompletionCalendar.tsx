@@ -2,203 +2,152 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { supabaseBrowser } from '../lib/supabaseBrowser';
-import { useRouter } from 'next/navigation';
 
-type DayCell = {
-  iso: string;   // YYYY-MM-DD
-  day: number;   // 1..31
-  inMonth: boolean;
-};
-
-function pad(n: number) {
-  return n.toString().padStart(2, '0');
+function pad(n: number) { return String(n).padStart(2, '0'); }
+function iso(y: number, m: number, d: number) { return `${y}-${pad(m)}-${pad(d)}`; }
+function monthDays(year: number, month1to12: number) {
+  const end = new Date(year, month1to12, 0).getDate(); // last day of month
+  const out: string[] = [];
+  for (let d = 1; d <= end; d++) out.push(iso(year, month1to12, d));
+  return out;
+}
+function ymLabel(date: Date) {
+  return date.toLocaleString(undefined, { month: 'long', year: 'numeric' });
 }
 
-function monthStart(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth(), 1);
-}
-function monthEnd(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth() + 1, 0);
-}
-
-// Build a 6x7 grid (Sun..Sat) covering the month, including leading/trailing days.
-function buildGrid(base: Date): DayCell[] {
-  const start = monthStart(base);
-  const end = monthEnd(base);
-
-  const startWeekday = start.getDay(); // 0=Sun .. 6=Sat
-  const firstGridDate = new Date(start);
-  firstGridDate.setDate(start.getDate() - startWeekday); // back to Sunday
-
-  const cells: DayCell[] = [];
-  for (let i = 0; i < 42; i++) {
-    const d = new Date(firstGridDate);
-    d.setDate(firstGridDate.getDate() + i);
-    const inMonth = d.getMonth() === base.getMonth();
-    const iso = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-    cells.push({ iso, day: d.getDate(), inMonth });
-  }
-  return cells;
-}
+type RespRow = { survey_date: string };
+type AssignRow = { survey_date: string };
 
 export default function CompletionCalendar() {
-  const router = useRouter();
-  const [today] = useState(() => {
-    const d = new Date();
-    // normalize to local date at midnight
-    return new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  });
-  const [cursor, setCursor] = useState<Date>(() => new Date(today)); // viewing month
-  const [completed, setCompleted] = useState<Set<string>>(new Set());
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
+  const [cursor, setCursor] = useState<Date>(() => new Date());
+  const [profileId, setProfileId] = useState<string | null>(null);
+  const [initials, setInitials] = useState<string | null>(null);
 
-  const start = monthStart(cursor);
-  const end = monthEnd(cursor);
+  const [responses, setResponses] = useState<Set<string>>(new Set());
+  const [required, setRequired] = useState<Set<string>>(new Set());
 
-  const startIso = `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(1)}`;
-  const endIso = `${end.getFullYear()}-${pad(end.getMonth() + 1)}-${pad(end.getDate())}`;
+  const year = cursor.getFullYear();
+  const month = cursor.getMonth() + 1;
+  const days = useMemo(() => monthDays(year, month), [year, month]);
+  const start = days[0];
+  const end = days[days.length - 1];
 
-  const grid = useMemo(() => buildGrid(cursor), [cursor]);
-
+  // Load session & profile
   useEffect(() => {
-    let mounted = true;
     (async () => {
-      setLoading(true);
-      setError(null);
+      const { data } = await supabaseBrowser.auth.getSession();
+      const uid = data.session?.user?.id || null;
+      if (!uid) { setReady(true); return; }
 
-      // ensure user is logged in; page should already be protected, but double-check
-      const { data: sess } = await supabaseBrowser.auth.getSession();
-      const uid = sess.session?.user?.id;
-      if (!uid) {
-        setError('Not signed in.');
-        setLoading(false);
-        return;
-      }
+      const { data: prof } = await supabaseBrowser
+        .from('profiles')
+        .select('id, initials')
+        .eq('id', uid)
+        .single();
 
-      // fetch all survey_dates for this month for this user
+      setProfileId(prof?.id ?? null);
+      setInitials(prof?.initials ?? null);
+      setReady(true);
+    })();
+  }, []);
+
+  // Load responses for this month (for this user)
+  useEffect(() => {
+    (async () => {
+      if (!profileId || !start || !end) { setResponses(new Set()); return; }
       const { data, error } = await supabaseBrowser
         .from('responses')
         .select('survey_date')
-        .gte('survey_date', startIso)
-        .lte('survey_date', endIso);
-
-      if (error) {
-        setError(error.message);
-        setLoading(false);
-        return;
-      }
-
+        .eq('profile_id', profileId)
+        .gte('survey_date', start)
+        .lte('survey_date', end);
+      if (error) { setResponses(new Set()); return; }
       const set = new Set<string>();
-      for (const row of data || []) {
-        // survey_date comes back as 'YYYY-MM-DD'
-        if (row.survey_date) set.add(String(row.survey_date));
-      }
-      if (mounted) {
-        setCompleted(set);
-        setLoading(false);
-      }
+      for (const r of (data as RespRow[])) set.add(String(r.survey_date));
+      setResponses(set);
     })();
-    return () => {
-      mounted = false;
-    };
-  }, [startIso, endIso]);
+  }, [profileId, start, end]);
 
-  function prevMonth() {
-    const d = new Date(cursor);
-    d.setMonth(d.getMonth() - 1);
-    setCursor(d);
-  }
-  function nextMonth() {
-    const d = new Date(cursor);
-    d.setMonth(d.getMonth() + 1);
-    setCursor(d);
-  }
+  // Load assignments for this month (by initials)
+  useEffect(() => {
+    (async () => {
+      if (!initials || !start || !end) { setRequired(new Set()); return; }
+      const { data, error } = await supabaseBrowser
+        .from('assignments')
+        .select('survey_date')
+        .eq('initials', initials)
+        .gte('survey_date', start)
+        .lte('survey_date', end);
+      if (error) { setRequired(new Set()); return; }
+      const set = new Set<string>();
+      for (const r of (data as AssignRow[])) set.add(String(r.survey_date));
+      setRequired(set);
+    })();
+  }, [initials, start, end]);
 
-  function goToDay(iso: string) {
-    router.push(`/survey/${iso}`);
-  }
+  function prevMonth() { const d = new Date(cursor); d.setMonth(d.getMonth() - 1); setCursor(d); }
+  function nextMonth() { const d = new Date(cursor); d.setMonth(d.getMonth() + 1); setCursor(d); }
 
-  const monthLabel = cursor.toLocaleString(undefined, { month: 'long', year: 'numeric' });
+  if (!ready) return <p>Loading…</p>;
 
   return (
-    <div style={{ display: 'grid', gap: 12 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <button type="button" onClick={prevMonth}>&larr; Prev</button>
-        <div style={{ fontWeight: 600 }}>{monthLabel}</div>
-        <button type="button" onClick={nextMonth}>Next &rarr;</button>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 12, fontSize: 14 }}>
-          <span><span style={swatch('#e5e5e5')}/> future</span>
-          <span><span style={swatch('#f8d7da')}/> missing</span>
-          <span><span style={swatch('#d1e7dd')}/> submitted</span>
-          <span><span style={swatch('#fff3cd')}/> today</span>
-        </div>
+    <section style={{ display: 'grid', gap: 12 }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <button onClick={prevMonth}>&larr; Prev</button>
+        <strong>{ymLabel(cursor)}</strong>
+        <button onClick={nextMonth}>Next &rarr;</button>
       </div>
 
-      {loading && <p>Loading…</p>}
-      {error && <p style={{ color: 'crimson' }}>{error}</p>}
-
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(7, 1fr)',
-        gap: 6
-      }}>
-        {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((w) => (
-          <div key={w} style={{ fontSize: 12, color: '#666', textAlign: 'center' }}>{w}</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 6 }}>
+        {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(h => (
+          <div key={h} style={{ fontSize: 12, textAlign: 'center', color: '#666' }}>{h}</div>
         ))}
-        {grid.map((c) => {
-          const cellDate = new Date(c.iso);
-          const isToday = cellDate.getTime() === today.getTime();
-          const isFuture = cellDate > today;
-          const isDone = completed.has(c.iso);
 
-          // colors
-          let bg = '#fff';
-          if (!c.inMonth) bg = '#fafafa';
-          else if (isFuture) bg = '#e5e5e5';
-          else if (isDone) bg = '#d1e7dd';
-          else bg = '#f8d7da';
+        {days.map(d => {
+          const hasResponse = responses.has(d);
+          const isRequired = required.has(d);
 
-          if (isToday) bg = '#fff3cd'; // highlight today
+          // color logic
+          let bg = '#f0f0f0';          // default gray (not required and no response)
+          let label = 'Optional';
+          if (isRequired && !hasResponse) { bg = '#ffe5e5'; label = 'Required (missing)'; } // red
+          if (hasResponse)             { bg = '#e8f7e8'; label = 'Submitted'; }            // green
 
+          const dt = new Date(d);
           return (
-            <button
-              key={c.iso}
-              type="button"
-              onClick={() => goToDay(c.iso)}
-              title={c.iso}
+            <a
+              key={d}
+              href={`/survey/${d}`}
+              title={d}
               style={{
-                background: bg,
+                textDecoration: 'none',
+                color: 'inherit',
                 border: '1px solid #ddd',
                 borderRadius: 6,
-                padding: '12px 6px',
-                minHeight: 56,
-                cursor: 'pointer',
-                opacity: c.inMonth ? 1 : 0.6,
+                background: bg,
+                minHeight: 64,
+                padding: 10,
+                display: 'grid',
+                alignContent: 'start',
+                gap: 4,
               }}
             >
-              <div style={{ fontWeight: 600, marginBottom: 6 }}>{c.day}</div>
-              {c.inMonth && (
-                <div style={{ fontSize: 12 }}>
-                  {isFuture ? '—' : (isDone ? 'Submitted' : 'Missing')}
-                </div>
-              )}
-            </button>
+              <div style={{ fontWeight: 700 }}>{dt.getDate()}</div>
+              <div style={{ fontSize: 12 }}>{label}</div>
+            </a>
           );
         })}
       </div>
-    </div>
-  );
-}
 
-function swatch(color: string): React.CSSProperties {
-  return {
-    display: 'inline-block',
-    width: 12,
-    height: 12,
-    background: color,
-    border: '1px solid #ccc',
-    verticalAlign: 'middle',
-    marginRight: 6,
-  } as React.CSSProperties;
+      <div style={{ fontSize: 12, color: '#555' }}>
+        <span style={{ display: 'inline-block', width: 12, height: 12, background: '#e8f7e8', border: '1px solid #ddd', marginRight: 6 }} />
+        Submitted
+        <span style={{ display: 'inline-block', width: 12, height: 12, background: '#ffe5e5', border: '1px solid #ddd', margin: '0 6px 0 12px' }} />
+        Required (missing)
+        <span style={{ display: 'inline-block', width: 12, height: 12, background: '#f0f0f0', border: '1px solid #ddd', margin: '0 6px 0 12px' }} />
+        Optional
+      </div>
+    </section>
+  );
 }
