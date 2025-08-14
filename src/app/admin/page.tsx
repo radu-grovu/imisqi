@@ -24,8 +24,7 @@ type RosterRow = { initials: string; full_name: string; active: boolean; is_admi
 export default function AdminPage() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
-  const [tab, setTab] = useState<'roster' | 'assign' | 'responses'>('roster');
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [tab, setTab] = useState<'roster' | 'assign' | 'responses' | 'analytics'>('roster');
 
   useEffect(() => {
     (async () => {
@@ -36,30 +35,27 @@ export default function AdminPage() {
         .select('is_admin')
         .eq('id', data.session.user.id)
         .single();
-      if (error || !prof?.is_admin) {
-        router.replace('/dashboard');
-        return;
-      }
-      setIsAdmin(true);
+      if (error || !prof?.is_admin) { router.replace('/dashboard'); return; }
       setReady(true);
     })();
   }, [router]);
 
   if (!ready) return <p style={{ padding: 16 }}>Loading…</p>;
-  if (!isAdmin) return null;
 
   return (
     <main style={{ padding: 16, display: 'grid', gap: 16 }}>
       <h1>Admin</h1>
-      <div style={{ display: 'flex', gap: 8 }}>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         <button onClick={() => setTab('roster')} disabled={tab==='roster'}>Roster</button>
         <button onClick={() => setTab('assign')} disabled={tab==='assign'}>Assignments</button>
         <button onClick={() => setTab('responses')} disabled={tab==='responses'}>Responses</button>
+        <button onClick={() => setTab('analytics')} disabled={tab==='analytics'}>Analytics</button>
       </div>
 
       {tab === 'roster' && <RosterManager />}
       {tab === 'assign' && <AssignmentsBuilder />}
       {tab === 'responses' && <ResponsesViewer />}
+      {tab === 'analytics' && <AnalyticsViewer />}
     </main>
   );
 }
@@ -248,7 +244,7 @@ function AssignmentsBuilder() {
           {days.map(d => {
             const required = requiredSet.has(d);
             const dt = new Date(d);
-            let bg = required ? '#fff3cd' : '#f0f0f0';
+            const bg = required ? '#fff3cd' : '#f0f0f0';
             return (
               <button
                 key={d}
@@ -299,7 +295,6 @@ function ResponsesViewer() {
   useEffect(() => {
     (async () => {
       if (!who) { setRows([]); return; }
-      // find the profile_id for these initials
       const { data: prof } = await supabaseBrowser
         .from('profiles')
         .select('id')
@@ -332,7 +327,7 @@ function ResponsesViewer() {
           {roster.map(r => <option key={r.initials} value={r.initials}>{r.initials} — {r.full_name}</option>)}
         </select>
         <button onClick={prevMonth}>&larr; Prev</button>
-        <strong>{ymLabel(cursor)}</strong>
+        <strong>{ymLabel(new Date(start))}</strong>
         <button onClick={nextMonth}>Next &rarr;</button>
       </div>
 
@@ -359,6 +354,238 @@ function ResponsesViewer() {
           )}
         </tbody>
       </table>
+    </section>
+  );
+}
+
+// ---------- ANALYTICS & EXPORT ----------
+type FlatRow = {
+  survey_date: string;
+  initials: string;
+  patient_label: string;
+  reason: string | null;
+  comment: string | null;
+  total_delayed: number | null;
+};
+
+function parseAnswers(ans: any): { total_delayed: number; patients: any[]; general_comments: string | null } {
+  if (!ans || typeof ans !== 'object') return { total_delayed: 0, patients: [], general_comments: null };
+  const total = typeof ans.total_delayed === 'number' ? ans.total_delayed : (Array.isArray(ans.patients) ? ans.patients.length : 0);
+  return {
+    total_delayed: total,
+    patients: Array.isArray(ans.patients) ? ans.patients : [],
+    general_comments: (typeof ans.general_comments === 'string' && ans.general_comments.trim()) ? ans.general_comments : null,
+  };
+}
+
+function toCSV(rows: FlatRow[]): string {
+  const headers = ['survey_date','initials','patient_label','reason','comment','total_delayed'];
+  const escape = (v: any) => {
+    if (v === null || v === undefined) return '';
+    const s = String(v).replace(/"/g, '""');
+    return `"${s}"`;
+  };
+  const lines = [headers.join(',')];
+  for (const r of rows) {
+    lines.push([r.survey_date, r.initials, r.patient_label, r.reason ?? '', r.comment ?? '', r.total_delayed ?? ''].map(escape).join(','));
+  }
+  return lines.join('\n');
+}
+
+function downloadCSV(filename: string, text: string) {
+  const blob = new Blob([text], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function AnalyticsViewer() {
+  const [roster, setRoster] = useState<RosterRow[]>([]);
+  const [who, setWho] = useState<string>(''); // optional filter
+  const [start, setStart] = useState<string>(() => {
+    const d = new Date(); d.setDate(1);
+    return iso(d.getFullYear(), d.getMonth()+1, 1);
+  });
+  const [end, setEnd] = useState<string>(() => {
+    const d = new Date(); d.setMonth(d.getMonth()+1, 0);
+    return iso(d.getFullYear(), d.getMonth()+1, d.getDate());
+  });
+  const [loading, setLoading] = useState(false);
+  const [flat, setFlat] = useState<FlatRow[]>([]);
+  const [summary, setSummary] = useState<{ totalPatients: number; responsesCount: number; avgPerResponse: number; reasons: Record<string, number> }>({
+    totalPatients: 0, responsesCount: 0, avgPerResponse: 0, reasons: {}
+  });
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabaseBrowser
+        .from('roster')
+        .select('initials,full_name,active')
+        .order('initials');
+      setRoster((data as any) || []);
+    })();
+  }, []);
+
+  async function run() {
+    setLoading(true);
+    try {
+      // 1) Find all profiles + initials mapping
+      let profQuery = supabaseBrowser.from('profiles').select('id, initials');
+      if (who) profQuery = profQuery.eq('initials', who);
+      const { data: profs, error: profErr } = await profQuery;
+      if (profErr) { setFlat([]); return; }
+      const idToInitials = new Map<string,string>();
+      for (const p of (profs || [])) if (p.id && p.initials) idToInitials.set(p.id, p.initials);
+
+      if (idToInitials.size === 0) { setFlat([]); setSummary({ totalPatients:0, responsesCount:0, avgPerResponse:0, reasons:{} }); return; }
+
+      // 2) Pull responses for those profile_ids in date range
+      const ids = Array.from(idToInitials.keys());
+      // Supabase can't do "in" with too many values easily; for modest teams it's fine:
+      let respQuery = supabaseBrowser
+        .from('responses')
+        .select('profile_id, survey_date, answers')
+        .gte('survey_date', start)
+        .lte('survey_date', end)
+        .in('profile_id', ids);
+
+      const { data: resps, error: respErr } = await respQuery;
+      if (respErr) { setFlat([]); return; }
+
+      // 3) Flatten patients
+      const flatRows: FlatRow[] = [];
+      let totalPatients = 0;
+      let responsesCount = 0;
+      const reasonCounts: Record<string, number> = {};
+
+      for (const r of (resps || [])) {
+        const initials = idToInitials.get(r.profile_id) || '';
+        const parsed = parseAnswers(r.answers);
+        responsesCount++;
+        const patients = parsed.patients.length ? parsed.patients : [];
+        totalPatients += patients.length;
+
+        if (patients.length === 0) {
+          // still collect a row with total=0 for completeness
+          flatRows.push({
+            survey_date: r.survey_date,
+            initials,
+            patient_label: '',
+            reason: null,
+            comment: null,
+            total_delayed: parsed.total_delayed ?? 0,
+          });
+        } else {
+          patients.forEach((p: any, idx: number) => {
+            const reason = (p?.reason ?? null) as string | null;
+            if (reason) reasonCounts[reason] = (reasonCounts[reason] || 0) + 1;
+            flatRows.push({
+              survey_date: r.survey_date,
+              initials,
+              patient_label: p?.label || `Patient ${idx+1}`,
+              reason,
+              comment: p?.comment ?? null,
+              total_delayed: parsed.total_delayed ?? patients.length,
+            });
+          });
+        }
+      }
+
+      const avgPerResponse = responsesCount ? +(totalPatients / responsesCount).toFixed(2) : 0;
+
+      setFlat(flatRows.sort((a,b) => a.survey_date.localeCompare(b.survey_date) || a.initials.localeCompare(b.initials)));
+      setSummary({ totalPatients, responsesCount, avgPerResponse, reasons: reasonCounts });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function exportCSV() {
+    const csv = toCSV(flat);
+    const label = who ? `_${who}` : '';
+    downloadCSV(`survey_export_${start}_to_${end}${label}.csv`, csv);
+  }
+
+  const reasonsSorted = useMemo(() => {
+    return Object.entries(summary.reasons).sort((a,b) => b[1]-a[1]);
+  }, [summary.reasons]);
+
+  return (
+    <section style={{ display: 'grid', gap: 12 }}>
+      <h2>Analytics & Export</h2>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        <label>Start <input type="date" value={start} onChange={e => setStart(e.target.value)} /></label>
+        <label>End <input type="date" value={end} onChange={e => setEnd(e.target.value)} /></label>
+        <select value={who} onChange={(e) => setWho(e.target.value)} style={{ padding: 8 }}>
+          <option value="">All providers</option>
+          {roster.map(r => <option key={r.initials} value={r.initials}>{r.initials} — {r.full_name}</option>)}
+        </select>
+        <button onClick={run} disabled={loading}>{loading ? 'Running…' : 'Run'}</button>
+        <button onClick={exportCSV} disabled={!flat.length}>Export CSV</button>
+      </div>
+
+      <div style={{ display: 'grid', gap: 6 }}>
+        <strong>Summary</strong>
+        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+          <div>Total patients delayed: <b>{summary.totalPatients}</b></div>
+          <div>Responses counted: <b>{summary.responsesCount}</b></div>
+          <div>Avg delayed per response: <b>{summary.avgPerResponse}</b></div>
+        </div>
+        <div>
+          <div style={{ margin: '8px 0 4px' }}>Reasons (desc):</div>
+          {reasonsSorted.length === 0 ? (
+            <div style={{ color: '#666' }}>—</div>
+          ) : (
+            <table style={{ borderCollapse: 'collapse' }}>
+              <thead><tr><th align="left">Reason</th><th align="right">Count</th></tr></thead>
+              <tbody>
+                {reasonsSorted.map(([reason, count]) => (
+                  <tr key={reason}>
+                    <td>{reason}</td>
+                    <td align="right">{count}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+
+      <div>
+        <strong>Patient-level rows ({flat.length})</strong>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                <th align="left">Date</th>
+                <th align="left">Initials</th>
+                <th align="left">Patient</th>
+                <th align="left">Reason</th>
+                <th align="left">Comment</th>
+                <th align="right">Total Delayed (that response)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {flat.map((r, i) => (
+                <tr key={i}>
+                  <td>{r.survey_date}</td>
+                  <td>{r.initials}</td>
+                  <td>{r.patient_label}</td>
+                  <td>{r.reason ?? ''}</td>
+                  <td style={{ maxWidth: 380, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {r.comment ?? ''}
+                  </td>
+                  <td align="right">{r.total_delayed ?? ''}</td>
+                </tr>
+              ))}
+              {flat.length === 0 && (
+                <tr><td colSpan={6} style={{ color: '#666' }}>No data. Choose a range and Run.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </section>
   );
 }
