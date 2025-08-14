@@ -17,6 +17,7 @@ export default function DashboardPage() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
   const [initials, setInitials] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     async function check() {
@@ -25,13 +26,15 @@ export default function DashboardPage() {
         router.replace('/');
         return;
       }
-      // fetch initials (optional for future assignment logic)
-      const { data: profs } = await supabaseBrowser
+      const { data: prof, error } = await supabaseBrowser
         .from('profiles')
-        .select('initials')
+        .select('initials,is_admin')
         .eq('id', data.session.user.id)
         .single();
-      setInitials(profs?.initials ?? null);
+      if (!error && prof) {
+        setInitials(prof.initials ?? null);
+        setIsAdmin(!!prof.is_admin);
+      }
       setReady(true);
     }
     check();
@@ -50,6 +53,11 @@ export default function DashboardPage() {
         <button type="button" onClick={() => router.push(`/survey/${today}`)}>
           Fill Today
         </button>
+        {isAdmin && (
+          <button type="button" onClick={() => router.push('/admin')}>
+            Admin
+          </button>
+        )}
       </div>
 
       <p style={{ marginBottom: 12 }}>
