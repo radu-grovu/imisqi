@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabaseBrowser } from '../../lib/supabaseBrowser';
+import CompletionCalendar from '../../components/CompletionCalendar';
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -12,7 +13,6 @@ export default function DashboardPage() {
     async function check() {
       const { data } = await supabaseBrowser.auth.getSession();
       if (!data.session) {
-        // not signed in → go to login
         router.replace('/');
         return;
       }
@@ -23,12 +23,14 @@ export default function DashboardPage() {
 
   if (!ready) return <p style={{ padding: 16 }}>Loading…</p>;
 
-  // your existing dashboard UI (kept simple for now)
   return (
     <main style={{ padding: 16 }}>
       <h1>Hospitalist Daily Survey</h1>
       <h2>Dashboard</h2>
-      <p>No active campaigns yet.</p>
+      <p style={{ marginBottom: 12 }}>
+        Click a day to fill or review the survey. Green = submitted, Red = missing.
+      </p>
+      <CompletionCalendar />
     </main>
   );
 }
