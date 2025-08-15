@@ -3,8 +3,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabaseBrowser } from '../../lib/supabaseBrowser';
+import BarChart from '../../components/charts/Bar';
+import LineChart from '../../components/charts/Line';
 
-// ---------- helpers ----------
+/* ------------------------------ helpers ------------------------------ */
 function pad(n: number) { return String(n).padStart(2, '0'); }
 function iso(y: number, m: number, d: number) { return `${y}-${pad(m)}-${pad(d)}`; }
 function monthDays(year: number, month1to12: number) {
@@ -20,7 +22,7 @@ function ymLabel(date: Date) {
 
 type RosterRow = { initials: string; full_name: string; active: boolean; is_admin: boolean };
 
-// ---------- main page ----------
+/* ============================== PAGE ============================== */
 export default function AdminPage() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
@@ -40,27 +42,41 @@ export default function AdminPage() {
     })();
   }, [router]);
 
-  if (!ready) return <p style={{ padding: 16 }}>Loading…</p>;
+  if (!ready) return <div className="max-w-5xl mx-auto"><div className="card">Loading…</div></div>;
 
   return (
-    <main style={{ padding: 16, display: 'grid', gap: 16 }}>
-      <h1>Admin</h1>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <button onClick={() => setTab('roster')} disabled={tab==='roster'}>Roster</button>
-        <button onClick={() => setTab('assign')} disabled={tab==='assign'}>Assignments</button>
-        <button onClick={() => setTab('responses')} disabled={tab==='responses'}>Responses</button>
-        <button onClick={() => setTab('analytics')} disabled={tab==='analytics'}>Analytics</button>
+    <div className="max-w-5xl mx-auto space-y-4">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-semibold">Admin</h1>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setTab('roster')}
+            className={`btn ${tab==='roster' ? 'btn-primary' : 'btn-secondary'}`}
+          >Roster</button>
+          <button
+            onClick={() => setTab('assign')}
+            className={`btn ${tab==='assign' ? 'btn-primary' : 'btn-secondary'}`}
+          >Assignments</button>
+          <button
+            onClick={() => setTab('responses')}
+            className={`btn ${tab==='responses' ? 'btn-primary' : 'btn-secondary'}`}
+          >Responses</button>
+          <button
+            onClick={() => setTab('analytics')}
+            className={`btn ${tab==='analytics' ? 'btn-primary' : 'btn-secondary'}`}
+          >Analytics</button>
+        </div>
       </div>
 
       {tab === 'roster' && <RosterManager />}
       {tab === 'assign' && <AssignmentsBuilder />}
       {tab === 'responses' && <ResponsesViewer />}
       {tab === 'analytics' && <AnalyticsViewer />}
-    </main>
+    </div>
   );
 }
 
-// ---------- ROSTER ----------
+/* ============================== ROSTER ============================== */
 function RosterManager() {
   const [rows, setRows] = useState<RosterRow[]>([]);
   const [initials, setInitials] = useState('');
@@ -82,7 +98,7 @@ function RosterManager() {
     if (!initials || !fullName) { setMsg('Initials and full name required.'); return; }
     const { error } = await supabaseBrowser
       .from('roster')
-      .upsert({ initials, full_name: fullName, active: true });
+      .upsert({ initials: initials.trim().toUpperCase(), full_name: fullName.trim(), active: true });
     if (error) setMsg(error.message);
     setInitials(''); setFullName('');
     await load();
@@ -106,46 +122,60 @@ function RosterManager() {
   }
 
   return (
-    <section style={{ display: 'grid', gap: 12 }}>
-      <h2>Roster</h2>
-      <form onSubmit={addRow} style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <input placeholder="Initials (e.g., RG)" value={initials}
-               onChange={(e) => setInitials(e.target.value.trim().toUpperCase())}
-               style={{ padding: 8 }} />
-        <input placeholder="Full name" value={fullName}
-               onChange={(e) => setFullName(e.target.value)}
-               style={{ padding: 8, minWidth: 280 }} />
-        <button type="submit">Add / Update</button>
-        {msg && <span style={{ color: 'crimson' }}>{msg}</span>}
-      </form>
+    <section className="card">
+      <h2 className="text-lg font-semibold mb-4">Roster</h2>
 
-      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-        <thead>
-          <tr><th align="left">Initials</th><th align="left">Name</th><th>Active</th><th>Admin</th><th></th></tr>
-        </thead>
-        <tbody>
-          {rows.map(r => (
-            <tr key={r.initials}>
-              <td>{r.initials}</td>
-              <td>{r.full_name}</td>
-              <td align="center">
-                <input type="checkbox" checked={r.active} onChange={(e) => toggle(r.initials, 'active', e.target.checked)} />
-              </td>
-              <td align="center">
-                <input type="checkbox" checked={r.is_admin} onChange={(e) => toggle(r.initials, 'is_admin', e.target.checked)} />
-              </td>
-              <td align="right">
-                <button onClick={() => remove(r.initials)}>Remove</button>
-              </td>
+      <form onSubmit={addRow} className="grid sm:grid-cols-[140px_1fr_auto] gap-3 mb-4">
+        <input
+          placeholder="Initials (e.g., RG)"
+          value={initials}
+          onChange={(e) => setInitials(e.target.value)}
+          className="input"
+        />
+        <input
+          placeholder="Full name"
+          value={fullName}
+          onChange={(e) => setFullName(e.target.value)}
+          className="input"
+        />
+        <button type="submit" className="btn btn-primary">Add / Update</button>
+      </form>
+      {msg && <p className="text-sm text-red-600 mb-3">{msg}</p>}
+
+      <div className="overflow-x-auto">
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Initials</th>
+              <th>Name</th>
+              <th>Active</th>
+              <th>Admin</th>
+              <th></th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map(r => (
+              <tr key={r.initials}>
+                <td>{r.initials}</td>
+                <td>{r.full_name}</td>
+                <td><input type="checkbox" checked={r.active} onChange={(e) => toggle(r.initials, 'active', e.target.checked)} /></td>
+                <td><input type="checkbox" checked={r.is_admin} onChange={(e) => toggle(r.initials, 'is_admin', e.target.checked)} /></td>
+                <td className="text-right">
+                  <button onClick={() => remove(r.initials)} className="btn btn-secondary">Remove</button>
+                </td>
+              </tr>
+            ))}
+            {rows.length === 0 && (
+              <tr><td colSpan={5} className="text-sm text-gray-500">No roster entries yet.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }
 
-// ---------- ASSIGNMENTS ----------
+/* ============================ ASSIGNMENTS ============================ */
 function AssignmentsBuilder() {
   const [roster, setRoster] = useState<RosterRow[]>([]);
   const [who, setWho] = useState<string>('');
@@ -222,45 +252,45 @@ function AssignmentsBuilder() {
   }
 
   return (
-    <section style={{ display: 'grid', gap: 12 }}>
-      <h2>Assignments</h2>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        <select value={who} onChange={(e) => setWho(e.target.value)} style={{ padding: 8 }}>
+    <section className="card">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-lg font-semibold">Assignments</h2>
+        <div className="flex gap-2">
+          <button onClick={assignWeekdays} disabled={!who} className="btn btn-secondary">Assign Weekdays</button>
+          <button onClick={clearMonth} disabled={!who} className="btn btn-secondary">Clear Month</button>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2 flex-wrap mb-3">
+        <select value={who} onChange={(e) => setWho(e.target.value)} className="input max-w-xs">
           <option value="">Select provider…</option>
           {roster.map(r => <option key={r.initials} value={r.initials}>{r.initials} — {r.full_name}</option>)}
         </select>
-        <button onClick={prevMonth}>&larr; Prev</button>
-        <strong>{ymLabel(cursor)}</strong>
-        <button onClick={nextMonth}>Next &rarr;</button>
-        <button onClick={assignWeekdays} disabled={!who}>Assign Weekdays</button>
-        <button onClick={clearMonth} disabled={!who}>Clear Month</button>
+        <div className="ml-auto flex items-center gap-2">
+          <button onClick={prevMonth} className="btn btn-secondary">&larr; Prev</button>
+          <span className="text-sm font-medium">{ymLabel(cursor)}</span>
+          <button onClick={nextMonth} className="btn btn-secondary">Next &rarr;</button>
+        </div>
       </div>
 
       {who && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 6 }}>
+        <div className="grid grid-cols-7 gap-2">
           {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(h => (
-            <div key={h} style={{ fontSize: 12, textAlign: 'center', color: '#666' }}>{h}</div>
+            <div key={h} className="text-center text-xs text-gray-600">{h}</div>
           ))}
           {days.map(d => {
             const required = requiredSet.has(d);
             const dt = new Date(d);
-            const bg = required ? '#fff3cd' : '#f0f0f0';
+            const bg = required ? 'bg-amber-50 border-amber-200' : 'bg-gray-50 border-gray-200';
             return (
               <button
                 key={d}
                 onClick={() => toggleDay(d)}
                 title={d}
-                style={{
-                  minHeight: 56,
-                  padding: 10,
-                  border: '1px solid #ddd',
-                  borderRadius: 6,
-                  background: bg,
-                  cursor: 'pointer'
-                }}
+                className={`h-20 border rounded-md ${bg} text-sm hover:shadow-soft`}
               >
-                <div style={{ fontWeight: 600, marginBottom: 6 }}>{dt.getDate()}</div>
-                <div style={{ fontSize: 12 }}>{required ? 'Required' : 'Not required'}</div>
+                <div className="font-semibold">{dt.getDate()}</div>
+                <div className="text-xs">{required ? 'Required' : 'Optional'}</div>
               </button>
             );
           })}
@@ -270,7 +300,7 @@ function AssignmentsBuilder() {
   );
 }
 
-// ---------- RESPONSES ----------
+/* ============================= RESPONSES ============================= */
 function ResponsesViewer() {
   const [roster, setRoster] = useState<RosterRow[]>([]);
   const [who, setWho] = useState<string>('');
@@ -319,46 +349,51 @@ function ResponsesViewer() {
   function nextMonth() { const d = new Date(cursor); d.setMonth(d.getMonth() + 1); setCursor(d); }
 
   return (
-    <section style={{ display: 'grid', gap: 12 }}>
-      <h2>Responses</h2>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        <select value={who} onChange={(e) => setWho(e.target.value)} style={{ padding: 8 }}>
+    <section className="card">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-lg font-semibold">Responses</h2>
+        <div className="flex items-center gap-2">
+          <button onClick={prevMonth} className="btn btn-secondary">&larr; Prev</button>
+          <span className="text-sm font-medium">{ymLabel(cursor)}</span>
+          <button onClick={nextMonth} className="btn btn-secondary">Next &rarr;</button>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2 mb-3">
+        <select value={who} onChange={(e) => setWho(e.target.value)} className="input max-w-xs">
           <option value="">Select provider…</option>
           {roster.map(r => <option key={r.initials} value={r.initials}>{r.initials} — {r.full_name}</option>)}
         </select>
-        <button onClick={prevMonth}>&larr; Prev</button>
-        <strong>{ymLabel(new Date(start))}</strong>
-        <button onClick={nextMonth}>Next &rarr;</button>
       </div>
 
-      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-        <thead>
-          <tr>
-            <th align="left">Date</th>
-            <th align="left">Submitted at</th>
-            <th align="left">Summary</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r, i) => (
-            <tr key={i}>
-              <td>{r.survey_date}</td>
-              <td>{r.submitted_at ? new Date(r.submitted_at).toLocaleString() : ''}</td>
-              <td style={{ fontSize: 12 }}>
-                {typeof r.answers === 'object' ? JSON.stringify(r.answers) : String(r.answers)}
-              </td>
+      <div className="overflow-x-auto">
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Submitted at</th>
+              <th>Summary</th>
             </tr>
-          ))}
-          {rows.length === 0 && (
-            <tr><td colSpan={3} style={{ color: '#666' }}>No responses.</td></tr>
-          )}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={i}>
+                <td>{r.survey_date}</td>
+                <td>{r.submitted_at ? new Date(r.submitted_at).toLocaleString() : ''}</td>
+                <td className="text-xs">{typeof r.answers === 'object' ? JSON.stringify(r.answers) : String(r.answers)}</td>
+              </tr>
+            ))}
+            {rows.length === 0 && (
+              <tr><td colSpan={3} className="text-sm text-gray-500">No responses.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }
 
-// ---------- ANALYTICS & EXPORT ----------
+/* ========================= ANALYTICS & EXPORT ========================= */
 type FlatRow = {
   survey_date: string;
   initials: string;
@@ -382,7 +417,6 @@ function parseAnswers(ans: any): {
     general_comments: (typeof ans.general_comments === 'string' && ans.general_comments.trim()) ? ans.general_comments : null,
   };
 }
-
 function toCSV(rows: FlatRow[]): string {
   const headers = ['survey_date','initials','patient_label','reason_category','reason_detail','comment','total_delayed'];
   const escape = (v: any) => {
@@ -395,14 +429,6 @@ function toCSV(rows: FlatRow[]): string {
     lines.push([r.survey_date, r.initials, r.patient_label, r.reason_category ?? '', r.reason_detail ?? '', r.comment ?? '', r.total_delayed ?? ''].map(escape).join(','));
   }
   return lines.join('\n');
-}
-
-function downloadCSV(filename: string, text: string) {
-  const blob = new Blob([text], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = filename; a.click();
-  URL.revokeObjectURL(url);
 }
 
 function AnalyticsViewer() {
@@ -435,34 +461,31 @@ function AnalyticsViewer() {
   async function run() {
     setLoading(true);
     try {
-      // 1) Find all profiles + initials mapping
+      // 1) Map profile IDs -> initials
       let profQuery = supabaseBrowser.from('profiles').select('id, initials');
       if (who) profQuery = profQuery.eq('initials', who);
       const { data: profs, error: profErr } = await profQuery;
       if (profErr) { setFlat([]); return; }
       const idToInitials = new Map<string,string>();
       for (const p of (profs || [])) if (p.id && p.initials) idToInitials.set(p.id, p.initials);
-
       if (idToInitials.size === 0) { setFlat([]); setSummary({ totalPatients:0, responsesCount:0, avgPerResponse:0, reasons:{} }); return; }
 
-      // 2) Pull responses for those profile_ids in date range
+      // 2) Pull responses
       const ids = Array.from(idToInitials.keys());
-      // Supabase can't do "in" with too many values easily; for modest teams it's fine:
-      let respQuery = supabaseBrowser
+      const { data: resps, error: respErr } = await supabaseBrowser
         .from('responses')
         .select('profile_id, survey_date, answers')
         .gte('survey_date', start)
         .lte('survey_date', end)
         .in('profile_id', ids);
 
-      const { data: resps, error: respErr } = await respQuery;
       if (respErr) { setFlat([]); return; }
 
-           // 3) Flatten patients
+      // 3) Flatten
       const flatRows: FlatRow[] = [];
       let totalPatients = 0;
       let responsesCount = 0;
-      const reasonCounts: Record<string, number> = {}; // key = "Category — Detail"
+      const reasonCounts: Record<string, number> = {}; // "Category — Detail"
 
       for (const r of (resps || [])) {
         const initials = idToInitials.get(r.profile_id) || '';
@@ -484,7 +507,6 @@ function AnalyticsViewer() {
           });
         } else {
           patients.forEach((p: any, idx: number) => {
-            // backward compatibility: older rows may have only p.reason (string)
             const cat = (typeof p.reason_category === 'string' && p.reason_category.trim()) ? p.reason_category.trim() : null;
             const detRaw = (typeof p.reason_detail === 'string' && p.reason_detail.trim()) ? p.reason_detail.trim() : null;
             const fallback = (typeof p.reason === 'string' && p.reason.trim()) ? p.reason.trim() : null;
@@ -493,7 +515,6 @@ function AnalyticsViewer() {
             let reasonDetail = detRaw;
 
             if (!reasonCategory && fallback) {
-              // try to split "Category — Detail" if someone migrated CSVs manually
               const parts = fallback.split('—').map((s: string) => s.trim());
               if (parts.length >= 2) {
                 reasonCategory = parts[0] || null;
@@ -524,7 +545,6 @@ function AnalyticsViewer() {
 
       setFlat(flatRows.sort((a,b) => a.survey_date.localeCompare(b.survey_date) || a.initials.localeCompare(b.initials)));
       setSummary({ totalPatients, responsesCount, avgPerResponse, reasons: reasonCounts });
-
     } finally {
       setLoading(false);
     }
@@ -533,68 +553,117 @@ function AnalyticsViewer() {
   function exportCSV() {
     const csv = toCSV(flat);
     const label = who ? `_${who}` : '';
-    downloadCSV(`survey_export_${start}_to_${end}${label}.csv`, csv);
+    const file = `survey_export_${start}_to_${end}${label}.csv`;
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = file; a.click();
+    URL.revokeObjectURL(url);
   }
 
-  const reasonsSorted = useMemo(() => {
-    return Object.entries(summary.reasons).sort((a,b) => b[1]-a[1]);
+  // chart data
+  const topReasons = useMemo(() => {
+    return Object.entries(summary.reasons)
+      .sort((a,b) => b[1]-a[1])
+      .slice(0, 10)
+      .map(([k,v]) => ({ label: k, value: v }));
   }, [summary.reasons]);
 
+  const byDate = useMemo(() => {
+    const by: Record<string, number> = {};
+    flat.forEach(r => { by[r.survey_date] = (by[r.survey_date] || 0) + 1; });
+    return Object.entries(by)
+      .sort(([a],[b]) => a.localeCompare(b))
+      .map(([d, v]) => ({ x: d.slice(5), y: v })); // MM-DD
+  }, [flat]);
+
   return (
-    <section style={{ display: 'grid', gap: 12 }}>
-      <h2>Analytics & Export</h2>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-        <label>Start <input type="date" value={start} onChange={e => setStart(e.target.value)} /></label>
-        <label>End <input type="date" value={end} onChange={e => setEnd(e.target.value)} /></label>
-        <select value={who} onChange={(e) => setWho(e.target.value)} style={{ padding: 8 }}>
-          <option value="">All providers</option>
-          {roster.map(r => <option key={r.initials} value={r.initials}>{r.initials} — {r.full_name}</option>)}
-        </select>
-        <button onClick={run} disabled={loading}>{loading ? 'Running…' : 'Run'}</button>
-        <button onClick={exportCSV} disabled={!flat.length}>Export CSV</button>
+    <section className="space-y-4">
+      <div className="card">
+        <h2 className="text-lg font-semibold mb-4">Analytics & Export</h2>
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="text-sm">
+            <div className="mb-1">Start</div>
+            <input type="date" value={start} onChange={e => setStart(e.target.value)} className="input"/>
+          </label>
+          <label className="text-sm">
+            <div className="mb-1">End</div>
+            <input type="date" value={end} onChange={e => setEnd(e.target.value)} className="input"/>
+          </label>
+          <label className="text-sm">
+            <div className="mb-1">Provider</div>
+            <select value={who} onChange={(e) => setWho(e.target.value)} className="input min-w-[14rem]">
+              <option value="">All providers</option>
+              {roster.map(r => <option key={r.initials} value={r.initials}>{r.initials} — {r.full_name}</option>)}
+            </select>
+          </label>
+          <div className="ml-auto flex gap-2">
+            <button onClick={run} disabled={loading} className="btn btn-primary">
+              {loading ? 'Running…' : 'Run'}
+            </button>
+            <button onClick={exportCSV} disabled={!flat.length} className="btn btn-secondary">
+              Export CSV
+            </button>
+          </div>
+        </div>
+
+        <div className="grid sm:grid-cols-3 gap-3 mt-4">
+          <div className="card p-4">
+            <div className="text-xs text-gray-600">Total patients delayed</div>
+            <div className="text-2xl font-semibold">{summary.totalPatients}</div>
+          </div>
+          <div className="card p-4">
+            <div className="text-xs text-gray-600">Responses counted</div>
+            <div className="text-2xl font-semibold">{summary.responsesCount}</div>
+          </div>
+          <div className="card p-4">
+            <div className="text-xs text-gray-600">Avg delayed / response</div>
+            <div className="text-2xl font-semibold">{summary.avgPerResponse}</div>
+          </div>
+        </div>
       </div>
 
-      <div style={{ display: 'grid', gap: 6 }}>
-        <strong>Summary</strong>
-        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-          <div>Total patients delayed: <b>{summary.totalPatients}</b></div>
-          <div>Responses counted: <b>{summary.responsesCount}</b></div>
-          <div>Avg delayed per response: <b>{summary.avgPerResponse}</b></div>
-        </div>
-        <div>
-          <div style={{ margin: '8px 0 4px' }}>Reasons (desc):</div>
-          {reasonsSorted.length === 0 ? (
-            <div style={{ color: '#666' }}>—</div>
+      <div className="grid md:grid-cols-2 gap-4">
+        <div className="card">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="font-semibold">Top reasons (Category — Detail)</h3>
+            <span className="text-xs text-gray-500">Top 10</span>
+          </div>
+          {topReasons.length ? (
+            <BarChart data={topReasons} />
           ) : (
-            <table style={{ borderCollapse: 'collapse' }}>
-              <thead><tr><th align="left">Reason</th><th align="right">Count</th></tr></thead>
-              <tbody>
-                {reasonsSorted.map(([reason, count]) => (
-                  <tr key={reason}>
-                    <td>{reason}</td>
-                    <td align="right">{count}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <p className="text-sm text-gray-500">Run a range to see data.</p>
+          )}
+        </div>
+
+        <div className="card">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="font-semibold">Responses over time</h3>
+            <span className="text-xs text-gray-500">per day</span>
+          </div>
+          {byDate.length ? (
+            <LineChart data={byDate} />
+          ) : (
+            <p className="text-sm text-gray-500">Run a range to see data.</p>
           )}
         </div>
       </div>
 
-      <div>
-        <strong>Patient-level rows ({flat.length})</strong>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+      <div className="card">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-semibold">Patient-level rows ({flat.length})</h3>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="table">
             <thead>
               <tr>
-                <th align="left">Date</th>
-                <th align="left">Initials</th>
-                <th align="left">Patient</th>
-                <th align="left">Reason category</th>
-                <th align="left">Detail</th>
-                <th align="left">Comment</th>
-                <th align="right">Total Delayed (that response)</th>
-
+                <th>Date</th>
+                <th>Initials</th>
+                <th>Patient</th>
+                <th>Reason category</th>
+                <th>Detail</th>
+                <th>Comment</th>
+                <th className="text-right">Total Delayed</th>
               </tr>
             </thead>
             <tbody>
@@ -605,15 +674,12 @@ function AnalyticsViewer() {
                   <td>{r.patient_label}</td>
                   <td>{r.reason_category ?? ''}</td>
                   <td>{r.reason_detail ?? ''}</td>
-                  <td style={{ maxWidth: 380, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {r.comment ?? ''}
-                  </td>
-                  <td align="right">{r.total_delayed ?? ''}</td>
-
+                  <td className="max-w-[380px] truncate">{r.comment ?? ''}</td>
+                  <td className="text-right">{r.total_delayed ?? ''}</td>
                 </tr>
               ))}
-              {flat.length === 0 && (
-                <tr><td colSpan={6} style={{ color: '#666' }}>No data. Choose a range and Run.</td></tr>
+              {!flat.length && (
+                <tr><td colSpan={7} className="text-sm text-gray-500">No data. Choose a date range and click Run.</td></tr>
               )}
             </tbody>
           </table>
