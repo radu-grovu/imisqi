@@ -1,0 +1,44 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Smooth background gradient */
+body {
+  @apply bg-gradient-to-br from-brand-50 to-brand-100 text-gray-900;
+  font-family: 'Inter', sans-serif;
+}
+
+/* Card container */
+.card {
+  @apply bg-white rounded-xl shadow-soft p-6 transition-transform duration-200 ease-in-out;
+}
+
+.card:hover {
+  transform: translateY(-2px);
+}
+
+/* Button styling */
+.btn {
+  @apply inline-flex items-center px-4 py-2 rounded-lg font-medium shadow-sm transition;
+}
+
+.btn-primary {
+  @apply bg-brand-600 text-white hover:bg-brand-700;
+}
+
+.btn-secondary {
+  @apply bg-gray-200 text-gray-800 hover:bg-gray-300;
+}
+
+/* Table styling */
+.table {
+  @apply w-full border-collapse;
+}
+
+.table th {
+  @apply bg-brand-100 text-left p-3 font-semibold;
+}
+
+.table td {
+  @apply p-3 border-t border-gray-200;
+}
