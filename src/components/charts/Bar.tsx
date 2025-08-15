@@ -7,7 +7,7 @@ export default function BarChart({
   data,
   height,                 // ignored in horizontal mode; computed from data
   maxWidth = 760,
-  horizontal = true,       // ← default to horizontal to avoid label overlap
+  horizontal = true,       // default to horizontal to avoid label overlap
 }: {
   data: Datum[];
   height?: number;
@@ -37,7 +37,9 @@ export default function BarChart({
             const y = topPad + i * (barH + gap);
             const w = Math.round((d.value / maxV) * innerW);
             return (
-              <g key={i} title={`${d.label}: ${d.value}`}>
+              <g key={i}>
+                <title>{`${d.label}: ${d.value}`}</title>
+
                 {/* Label (left) */}
                 <text
                   x={12}
@@ -82,7 +84,7 @@ export default function BarChart({
     );
   }
 
-  // ---- (Optional) Vertical fallback, not used now ----
+  // ---- Vertical fallback (unused by default) ----
   const barW = 28;
   const gap = 14;
   const h = height ?? 220;
@@ -96,7 +98,8 @@ export default function BarChart({
           const x = gap + i * (barW + gap);
           const y = h - 30 - bh;
           return (
-            <g key={i} title={`${d.label}: ${d.value}`}>
+            <g key={i}>
+              <title>{`${d.label}: ${d.value}`}</title>
               <rect x={x} y={y} width={barW} height={bh} rx={6} className="fill-brand-600" />
               <text
                 x={x + barW / 2}
