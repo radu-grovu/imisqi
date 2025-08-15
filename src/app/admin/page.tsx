@@ -630,7 +630,7 @@ function AnalyticsViewer() {
             <span className="text-xs text-gray-500">Top 10</span>
           </div>
           {topReasons.length ? (
-            <BarChart data={topReasons} />
+            <BarChart data={topReasons} horizontal />
           ) : (
             <p className="text-sm text-gray-500">Run a range to see data.</p>
           )}
