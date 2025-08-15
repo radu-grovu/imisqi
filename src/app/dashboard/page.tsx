@@ -42,28 +42,48 @@ export default function DashboardPage() {
 
   const today = useMemo(() => isoToday(), []);
 
-  if (!ready) return <p style={{ padding: 16 }}>Loading…</p>;
+  if (!ready) {
+    return (
+      <div className="max-w-5xl mx-auto">
+        <div className="card text-sm">Loading…</div>
+      </div>
+    );
+  }
 
   return (
-    <main style={{ padding: 16 }}>
-      <h1>Hospitalist Daily Survey</h1>
-      <h2>Dashboard</h2>
-
-      <div style={{ display: 'flex', gap: 8, margin: '8px 0 16px' }}>
-        <button type="button" onClick={() => router.push(`/survey/${today}`)}>
-          Fill Today
-        </button>
-        {isAdmin && (
-          <button type="button" onClick={() => router.push('/admin')}>
-            Admin
+    <div className="max-w-5xl mx-auto space-y-4">
+      <div className="flex items-baseline justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold">Dashboard</h1>
+          <p className="text-sm text-gray-600">{initials ? `Signed in as ${initials}` : ''}</p>
+        </div>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => router.push(`/survey/${today}`)}
+            className="btn btn-primary"
+          >
+            Fill Today
           </button>
-        )}
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={() => router.push('/admin')}
+              className="btn btn-secondary"
+            >
+              Admin
+            </button>
+          )}
+        </div>
       </div>
 
-      <p style={{ marginBottom: 12 }}>
-        Click a day to fill or review the survey. Green = submitted, Red = missing.
-      </p>
-      <CompletionCalendar />
-    </main>
+      <div className="card">
+        <p className="text-sm text-gray-600 mb-3">
+          Click a day to fill or review the survey. <span className="font-medium">Green</span> = submitted,&nbsp;
+          <span className="font-medium">Red</span> = required but missing.
+        </p>
+        <CompletionCalendar />
+      </div>
+    </div>
   );
 }
