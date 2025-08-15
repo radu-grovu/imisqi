@@ -23,30 +23,46 @@ export default function GatePage() {
         setMsg('Incorrect password.');
         return;
       }
-      router.replace('/'); // go to landing (login/register)
+      router.replace('/');
     } finally {
       setBusy(false);
     }
   }
 
+  async function resetCookie() {
+    await fetch('/api/gate/clear', { method: 'POST' });
+    setMsg('Gate cookie cleared. You can re-enter the password now.');
+  }
+
   return (
-    <main style={{ maxWidth: 520, margin: '48px auto', padding: 16 }}>
-      <h1 style={{ marginBottom: 8 }}>Access</h1>
-      <p style={{ marginBottom: 16 }}>Enter the shared password to continue.</p>
-      <form onSubmit={onSubmit} style={{ display: 'grid', gap: 12 }}>
-        <input
-          type="password"
-          placeholder="Shared password"
-          value={pw}
-          onChange={(e) => setPw(e.target.value)}
-          style={{ padding: 10, fontSize: 16 }}
-          autoFocus
-        />
-        <button type="submit" disabled={busy} style={{ padding: '10px 14px', fontSize: 16 }}>
-          {busy ? 'Checking…' : 'Continue'}
-        </button>
-        {msg && <p style={{ color: 'crimson' }}>{msg}</p>}
-      </form>
-    </main>
+    <div className="max-w-md mx-auto mt-12">
+      <div className="card">
+        <h1 className="text-xl font-semibold mb-2">Access</h1>
+        <p className="text-sm text-gray-600 mb-4">
+          Enter the shared password to continue.
+        </p>
+
+        <form onSubmit={onSubmit} className="grid gap-3">
+          <input
+            type="password"
+            placeholder="Shared password"
+            value={pw}
+            onChange={(e) => setPw(e.target.value)}
+            className="input"
+            autoFocus
+          />
+          <button type="submit" disabled={busy} className="btn btn-primary">
+            {busy ? 'Checking…' : 'Continue'}
+          </button>
+          {msg && <p className="text-sm text-red-600">{msg}</p>}
+        </form>
+
+        <div className="mt-4">
+          <button onClick={resetCookie} type="button" className="btn btn-secondary">
+            Reset gate cookie (testing)
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
