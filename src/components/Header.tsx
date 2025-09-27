@@ -11,16 +11,14 @@ export default function Header() {
 
   useEffect(() => {
     (async () => {
-      try {
-        const { data } = await supabaseBrowser.auth.getSession();
-        if (!data.session) return;
-        const { data: prof } = await supabaseBrowser
-          .from('profiles')
-          .select('is_admin')
-          .eq('id', data.session.user.id)
-          .single();
-        setIsAdmin(!!prof?.is_admin);
-      } catch {}
+      const { data } = await supabaseBrowser.auth.getSession();
+      if (!data.session) return;
+      const { data: prof } = await supabaseBrowser
+        .from('profiles')
+        .select('is_admin')
+        .eq('id', data.session.user.id)
+        .single();
+      setIsAdmin(!!prof?.is_admin);
     })();
   }, []);
 
@@ -34,9 +32,6 @@ export default function Header() {
             <Link href="/delay" className="text-gray-600 hover:text-gray-900">Delays</Link>
             <Link href="/rankings" className="text-gray-600 hover:text-gray-900">Rankings</Link>
             <Link href="/ideas" className="text-gray-600 hover:text-gray-900">Ideas</Link>
-            <Link href="/delay/previous" className="text-gray-600 hover:text-gray-900">My Delays</Link>
-            <Link href="/rankings/mine" className="text-gray-600 hover:text-gray-900">My Rankings</Link>
-            <Link href="/ideas/mine" className="text-gray-600 hover:text-gray-900">My Ideas</Link>
             {isAdmin && <Link href="/admin" className="text-gray-600 hover:text-gray-900">Admin</Link>}
           </nav>
         )}
