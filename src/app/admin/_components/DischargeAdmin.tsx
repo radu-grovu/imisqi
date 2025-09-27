@@ -23,7 +23,7 @@ export default function DischargeAdmin() {
     setMsg(null); setLoading(true);
     try {
       let q = supabaseBrowser.from('discharge_delay_flat')
-        .select('event_date, provider_initials, cause, patients_delayed')
+        .select('event_date, provider_initials, cause, subcause, patient_key, patients_delayed')
         .order('event_date', { ascending: true })
         .limit(50000);
       if (from) (q as any).gte('event_date', from);
