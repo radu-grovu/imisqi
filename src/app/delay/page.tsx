@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabaseBrowser } from '@/lib/supabaseBrowser';
 
-// --- Cause → Subcause dictionary (adjust freely) ---
+// --- Cause → Subcause dictionary (adjust as needed) ---
 const CAUSES: Record<string, string[]> = {
   'Imaging delay': ['MRI','CT','Ultrasound','X-ray','IR','Scheduling','Result turnaround','Other'],
   'Consult delay': ['Cardiology','GI','Neurology','Surgery','Psychiatry','Hospitalist','Other'],
@@ -18,12 +18,11 @@ const CAUSES: Record<string, string[]> = {
 
 type Row = {
   id?: number;
-  event_date: string;             // YYYY-MM-DD
+  event_date: string;   // YYYY-MM-DD
+  patient_key: string;  // HIPAA-safe short tag (e.g., last 4 MRN)
   cause: string;
   subcause: string;
-  patient_key: string;            // HIPAA-safe short tag (e.g., last 4 MRN)
-  // keep patients_delayed under the hood for analytics (fixed to 1)
-  patients_delayed?: number;
+  patients_delayed?: number; // fixed to 1 per patient row
 };
 
 type DayStatus = 'none' | 'recorded' | 'no_delays';
@@ -37,7 +36,6 @@ function isSameDate(a: Date, b: Date){ return a.getFullYear()===b.getFullYear() 
 export default function DelaysPage() {
   const router = useRouter();
   const [userId, setUserId] = useState<string | null>(null);
-  const [myInitials, setMyInitials] = useState<string>('');
   const [monthAnchor, setMonthAnchor] = useState<Date>(new Date()); // current month
   const [selectedDate, setSelectedDate] = useState<string>(formatDate(new Date()));
   const [rows, setRows] = useState<Row[]>([]);
@@ -45,15 +43,12 @@ export default function DelaysPage() {
   const [msg, setMsg] = useState<string|null>(null);
   const [loading, setLoading] = useState(false);
 
-  // session + profile
+  // session
   useEffect(() => {
     (async () => {
       const { data } = await supabaseBrowser.auth.getSession();
       if (!data.session) { router.replace('/auth/login'); return; }
       setUserId(data.session.user.id);
-      const { data: prof } = await supabaseBrowser.from('profiles').select('initials').eq('id', data.session.user.id).single();
-      setMyInitials(prof?.initials ?? '');
-      // initial load
       await refreshMonth(data.session.user.id, monthAnchor);
       await loadDay(data.session.user.id, selectedDate);
     })();
@@ -75,7 +70,6 @@ export default function DelaysPage() {
     const from = formatDate(a);
     const to   = formatDate(z);
 
-    // delays present?
     const d1 = supabaseBrowser
       .from('discharge_surveys')
       .select('event_date', { count: 'exact', head: false })
@@ -83,7 +77,6 @@ export default function DelaysPage() {
       .gte('event_date', from)
       .lte('event_date', to);
 
-    // explicit "no delays"?
     const d2 = supabaseBrowser
       .from('discharge_no_delays')
       .select('event_date', { count: 'exact', head: false })
@@ -96,9 +89,7 @@ export default function DelaysPage() {
 
     const map: Record<string, DayStatus> = {};
     (delays ?? []).forEach((r:any) => { map[r.event_date] = 'recorded'; });
-    (none ?? []).forEach((r:any) => {
-      if (!map[r.event_date]) map[r.event_date] = 'no_delays';
-    });
+    (none ?? []).forEach((r:any) => { if (!map[r.event_date]) map[r.event_date] = 'no_delays'; });
     setStatusMap(map);
   }
 
@@ -106,7 +97,7 @@ export default function DelaysPage() {
     setLoading(true); setMsg(null);
     const { data, error } = await supabaseBrowser
       .from('discharge_surveys')
-      .select('id, event_date, cause, subcause, patient_key, patients_delayed')
+      .select('id, event_date, patient_key, cause, subcause, patients_delayed')
       .eq('user_id', uid)
       .eq('event_date', date)
       .order('id', { ascending: true });
@@ -114,9 +105,9 @@ export default function DelaysPage() {
     setRows(((data ?? []) as any[]).map(r => ({
       id: r.id,
       event_date: r.event_date,
+      patient_key: r.patient_key ?? '',
       cause: r.cause,
       subcause: r.subcause,
-      patient_key: r.patient_key,
       patients_delayed: r.patients_delayed ?? 1
     })));
     setLoading(false);
@@ -144,28 +135,36 @@ export default function DelaysPage() {
   async function addRow() {
     const cause = Object.keys(CAUSES)[0];
     const sub = CAUSES[cause][0];
-    setRows(prev => [...prev, { event_date: selectedDate, cause, subcause: sub, patient_key: '', patients_delayed: 1 }]);
-    // If there was a "no delays" mark, remove it proactively
+    setRows(prev => [...prev, { event_date: selectedDate, patient_key: '', cause, subcause: sub, patients_delayed: 1 }]);
+    // If there was a "no delays" mark, clear it proactively
     if (statusMap[selectedDate] === 'no_delays') {
       await removeNoDelaysMark(selectedDate);
       setStatusMap(prev => ({ ...prev, [selectedDate]: 'none' }));
     }
   }
 
-  function setField(id: number | undefined, field: keyof Row, value: any) {
-    setRows(prev => prev.map(r => r.id === id ? { ...r, [field]: value } : r));
+  // ----- IMPORTANT FIX: update by array index, not only by id -----
+  function setFieldAt(index: number, field: keyof Row, value: any) {
+    setRows(prev => prev.map((r,i) => i===index ? { ...r, [field]: value } : r));
   }
 
-  async function saveRow(r: Row) {
+  async function saveRow(index: number, r: Row) {
     if (!userId) return;
     const payload = {
       event_date: r.event_date,
+      patient_key: (r.patient_key ?? '').trim(),
       cause: r.cause,
       subcause: r.subcause,
-      patient_key: r.patient_key,
-      patients_delayed: 1  // per-patient row
+      patients_delayed: 1
     };
-    // Upsert: if this row already exists (id), update; else insert
+
+    // basic validation: patient_key 3–12, alnum or dash
+    if (payload.patient_key.length < 3 || payload.patient_key.length > 12 || !/^[A-Za-z0-9-]+$/.test(payload.patient_key)) {
+      setMsg('Patient key must be 3–12 chars (letters, numbers, or dash).');
+      setTimeout(()=>setMsg(null), 1800);
+      return;
+    }
+
     if (r.id) {
       const { error } = await supabaseBrowser
         .from('discharge_surveys')
@@ -179,24 +178,26 @@ export default function DelaysPage() {
         .select('id')
         .single();
       if (error) { setMsg(error.message); return; }
-      // write back id
-      setRows(prev => prev.map(x => (x === r ? { ...r, id: data?.id } : x)));
+      // write back id to the saved draft row
+      setRows(prev => prev.map((x,i) => i===index ? { ...r, id: data?.id, patient_key: payload.patient_key } : x));
     }
-    // Mark calendar as recorded for the day
+
     setStatusMap(prev => ({ ...prev, [selectedDate]: 'recorded' }));
     setMsg('Saved.');
     setTimeout(()=>setMsg(null), 1200);
   }
 
-  async function deleteRow(r: Row) {
-    if (!r.id) { setRows(prev => prev.filter(x => x !== r)); return; }
-    if (!confirm('Delete this delay entry?')) return;
-    const { error } = await supabaseBrowser.from('discharge_surveys').delete().eq('id', r.id);
-    if (error) { setMsg(error.message); return; }
-    setRows(prev => prev.filter(x => x.id !== r.id));
+  async function deleteRow(index: number, r: Row) {
+    if (r.id) {
+      if (!confirm('Delete this delay entry?')) return;
+      const { error } = await supabaseBrowser.from('discharge_surveys').delete().eq('id', r.id);
+      if (error) { setMsg(error.message); return; }
+    }
+    setRows(prev => prev.filter((_,i) => i!==index));
+
     // If no rows remain and no "no_delays" mark, clear day status
     setTimeout(() => {
-      if (!rows.length) {
+      if (rows.length <= 1) {
         setStatusMap(prev => ({ ...prev, [selectedDate]: prev[selectedDate]==='no_delays' ? 'no_delays' : 'none' }));
       }
     }, 0);
@@ -207,7 +208,6 @@ export default function DelaysPage() {
     if (rows.length) {
       const proceed = confirm('Marking “No delays” will delete all delay entries for this day. Continue?');
       if (!proceed) return;
-      // delete day’s rows first
       const { error: delErr } = await supabaseBrowser
         .from('discharge_surveys')
         .delete()
@@ -216,7 +216,6 @@ export default function DelaysPage() {
       if (delErr) { setMsg(delErr.message); return; }
       setRows([]);
     }
-    // insert or upsert "no delays"
     const { error } = await supabaseBrowser
       .from('discharge_no_delays')
       .upsert({ event_date: selectedDate, user_id: userId }, { onConflict: 'user_id,event_date' });
@@ -233,12 +232,6 @@ export default function DelaysPage() {
       .delete()
       .eq('event_date', dateStr)
       .eq('user_id', userId);
-  }
-
-  // Simple field validation
-  function patientKeyValid(s: string) {
-    const t = (s || '').trim();
-    return t.length >= 3 && t.length <= 12 && /^[A-Za-z0-9-]+$/.test(t);
   }
 
   const days = useMemo(() => calendarDays(), [monthAnchor, statusMap]);
@@ -310,9 +303,9 @@ export default function DelaysPage() {
             <table className="table">
               <thead>
                 <tr>
+                  <th>Patient key <span className="text-xs text-gray-500">(e.g., last4 MRN)</span></th>
                   <th>Cause</th>
                   <th>Sub-cause</th>
-                  <th>Patient key <span className="text-xs text-gray-500">(e.g., last 4 MRN)</span></th>
                   <th></th>
                 </tr>
               </thead>
@@ -320,41 +313,48 @@ export default function DelaysPage() {
                 {rows.length === 0 && (
                   <tr><td colSpan={4} className="text-sm text-gray-600">No entries yet. Add one, or mark “No delays”.</td></tr>
                 )}
-                {rows.map(r => {
+                {rows.map((r, index) => {
                   const subs = CAUSES[r.cause] ?? ['Other'];
-                  const validKey = patientKeyValid(r.patient_key);
+                  const keyTrim = (r.patient_key ?? '').trim();
+                  const validKey = keyTrim.length >= 3 && keyTrim.length <= 12 && /^[A-Za-z0-9-]+$/.test(keyTrim);
                   return (
-                    <tr key={r.id ?? Math.random()}>
+                    <tr key={r.id ? `row-${r.id}` : `draft-${index}`}>
                       <td>
-                        <select className="input min-w-[12rem]"
+                        <input
+                          className={`input min-w-[10rem] ${validKey || keyTrim.length===0 ? '' : 'border-red-400'}`}
+                          placeholder="e.g., MRN-1234"
+                          value={r.patient_key}
+                          onChange={(e)=>setFieldAt(index, 'patient_key', e.target.value)}
+                        />
+                        {!validKey && keyTrim.length>0 && (
+                          <div className="text-xs text-red-600 mt-1">3–12 letters/numbers/dash</div>
+                        )}
+                      </td>
+                      <td>
+                        <select
+                          className="input min-w-[12rem]"
                           value={r.cause}
                           onChange={(e)=>{
                             const cause = e.target.value;
                             const firstSub = (CAUSES[cause] ?? ['Other'])[0];
-                            setField(r.id, 'cause', cause);
-                            setField(r.id, 'subcause', firstSub);
+                            setFieldAt(index, 'cause', cause);
+                            setFieldAt(index, 'subcause', firstSub);
                           }}>
                           {Object.keys(CAUSES).map(c => <option key={c} value={c}>{c}</option>)}
                         </select>
                       </td>
                       <td>
-                        <select className="input min-w-[12rem]"
+                        <select
+                          className="input min-w-[12rem]"
                           value={r.subcause}
-                          onChange={(e)=>setField(r.id, 'subcause', e.target.value)}>
+                          onChange={(e)=>setFieldAt(index, 'subcause', e.target.value)}>
                           {subs.map(s => <option key={s} value={s}>{s}</option>)}
                         </select>
                       </td>
-                      <td>
-                        <input className={`input min-w-[10rem] ${validKey?'':'border-red-400'}`}
-                               placeholder="e.g., MRN-1234"
-                               value={r.patient_key}
-                               onChange={(e)=>setField(r.id, 'patient_key', e.target.value.trim())} />
-                        {!validKey && <div className="text-xs text-red-600 mt-1">3–12 letters/numbers</div>}
-                      </td>
                       <td className="text-right">
                         <div className="flex gap-2 justify-end">
-                          <button className="btn btn-secondary" disabled={!validKey} onClick={()=>saveRow(r)} title="Save">Save</button>
-                          <button className="btn btn-danger" onClick={()=>deleteRow(r)} title="Delete">Delete</button>
+                          <button className="btn btn-secondary" disabled={!validKey} onClick={()=>saveRow(index, r)} title="Save">Save</button>
+                          <button className="btn btn-danger" onClick={()=>deleteRow(index, r)} title="Delete">Delete</button>
                         </div>
                       </td>
                     </tr>
