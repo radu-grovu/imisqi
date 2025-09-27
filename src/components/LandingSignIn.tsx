@@ -1,3 +1,4 @@
+// src/components/LandingSignIn.tsx
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -11,14 +12,10 @@ export default function Landing() {
   const [gateOk, setGateOk] = useState<boolean>(false);
 
   useEffect(() => {
-    // Try to load roster to check if gate cookie already present (optional)
-    // We'll rely on a ping to roster; if 401 due to middleware redirect, gateOk stays false.
+    // Check if gate cookie already present by attempting to fetch roster
     (async () => {
       try {
-        const { data, error } = await supabaseBrowser
-          .from('roster')
-          .select('initials')
-          .limit(1);
+        const { data, error } = await supabaseBrowser.from('roster').select('initials').limit(1);
         if (!error) setGateOk(true);
       } catch {
         setGateOk(false);
@@ -69,6 +66,7 @@ function Gate({ onPassed }: { onPassed: () => void }) {
           value={pw}
           onChange={(e) => setPw(e.target.value)}
           style={{ padding: 10, fontSize: 16 }}
+          autoFocus
         />
         <button type="submit" disabled={busy} style={{ padding: '10px 14px', fontSize: 16 }}>
           {busy ? 'Checking…' : 'Continue'}
@@ -88,10 +86,11 @@ function LoginForm() {
   const [roster, setRoster] = useState<RosterRow[]>([]);
 
   useEffect(() => {
+    // Load active roster for initials dropdown
     (async () => {
       const { data, error } = await supabaseBrowser
         .from('roster')
-        .select('initials,full_name,active')
+        .select('initials, full_name, active')
         .eq('active', true)
         .order('initials');
       if (!error && data) setRoster(data);
@@ -125,16 +124,20 @@ function LoginForm() {
 
   return (
     <>
-      <h1 style={{ marginBottom: 8 }}>Sign in</h1>
-      <p style={{ marginBottom: 16 }}>
-        Choose your initials and enter your password. New here? <a href="/register">Create an account</a>.
-      </p>
+      <h1 style={{ marginBottom: 8 }}>Sign In</h1>
+      <p style={{ marginBottom: 16 }}>Choose your initials and enter your password to sign in.</p>
+      {/* New Account button */}
+      <div style={{ marginBottom: 24 }}>
+        <a href="/register" className="btn btn-secondary">
+          New here? Create an account
+        </a>
+      </div>
       <form onSubmit={onLogin} style={{ display: 'grid', gap: 12 }}>
         <select
           value={initials}
           onChange={(e) => setInitials(e.target.value)}
-          style={{ padding: 10, fontSize: 16 }}
           required
+          style={{ padding: 10, fontSize: 16 }}
         >
           <option value="">Select initials…</option>
           {roster.map((r) => (
