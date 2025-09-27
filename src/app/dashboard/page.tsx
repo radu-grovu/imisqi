@@ -1,88 +1,73 @@
+// src/app/dashboard/page.tsx
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabaseBrowser } from '../../lib/supabaseBrowser';
-import CompletionCalendar from '../../components/CompletionCalendar';
-
-function isoToday() {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
 
 export default function DashboardPage() {
   const router = useRouter();
-  const [ready, setReady] = useState(false);
   const [initials, setInitials] = useState<string | null>(null);
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    async function check() {
+    // On mount, check for an active session and load profile
+    (async () => {
       const { data } = await supabaseBrowser.auth.getSession();
       if (!data.session) {
+        // Not logged in, redirect to landing
         router.replace('/');
         return;
       }
+      // Fetch the user's initials (and possibly other info if needed)
       const { data: prof, error } = await supabaseBrowser
         .from('profiles')
-        .select('initials,is_admin')
+        .select('initials')
         .eq('id', data.session.user.id)
         .single();
       if (!error && prof) {
-        setInitials(prof.initials ?? null);
-        setIsAdmin(!!prof.is_admin);
+        setInitials(prof.initials);
       }
       setReady(true);
-    }
-    check();
+    })();
   }, [router]);
 
-  const today = useMemo(() => isoToday(), []);
-
   if (!ready) {
-    return (
-      <div className="max-w-5xl mx-auto">
-        <div className="card text-sm">Loading…</div>
-      </div>
-    );
+    return <div className="card">Loading…</div>;
   }
 
   return (
-    <div className="max-w-5xl mx-auto space-y-4">
-      <div className="flex items-baseline justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">Dashboard</h1>
-          <p className="text-sm text-gray-600">{initials ? `Signed in as ${initials}` : ''}</p>
-        </div>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => router.push(`/survey/${today}`)}
-            className="btn btn-primary"
-          >
-            Fill Today
-          </button>
-          {isAdmin && (
-            <button
-              type="button"
-              onClick={() => router.push('/admin')}
-              className="btn btn-secondary"
-            >
-              Admin
-            </button>
-          )}
-        </div>
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-semibold">Dashboard</h1>
+        {initials && <p className="text-sm text-gray-600">Signed in as {initials}</p>}
       </div>
 
-      <div className="card">
-        <p className="text-sm text-gray-600 mb-3">
-          Click a day to fill or review the survey. <span className="font-medium">Green</span> = submitted,&nbsp;
-          <span className="font-medium">Red</span> = required but missing.
-        </p>
-        <CompletionCalendar />
+      {/* Menu grid for sections */}
+      <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        {/* Discharge Delay Recorder option */}
+        <a href="/delay" className="card hover:bg-gray-50 focus:ring focus:ring-brand-100 block">
+          <h2 className="text-lg font-medium mb-1">Discharge Delay Recorder</h2>
+          <p className="text-sm text-gray-700">
+            Track daily discharge delays and fill out required delay surveys.
+          </p>
+        </a>
+
+        {/* Hospitalist Rankings option */}
+        <a href="/rankings" className="card hover:bg-gray-50 focus:ring focus:ring-brand-100 block">
+          <h2 className="text-lg font-medium mb-1">Hospitalist Rankings</h2>
+          <p className="text-sm text-gray-700">
+            Rate your colleagues (note quality and work ethic) and provide anonymous feedback.
+          </p>
+        </a>
+
+        {/* Ideas for Improvement option */}
+        <a href="/ideas" className="card hover:bg-gray-50 focus:ring focus:ring-brand-100 block">
+          <h2 className="text-lg font-medium mb-1">Ideas for Improvement</h2>
+          <p className="text-sm text-gray-700">
+            Suggest improvements for management, admitting, rounding, or night shifts.
+          </p>
+        </a>
       </div>
     </div>
   );
