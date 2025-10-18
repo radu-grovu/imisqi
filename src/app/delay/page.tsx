@@ -123,6 +123,40 @@ export default function DelaysPage() {
     if (userId) { await loadDay(userId, dstr); }
   }
 
+async function markNoDelays() {
+  if (!userId) return;
+  // Insert a "no delays" row for the user and selectedDate
+  const { error } = await supabaseBrowser
+    .from('discharge_no_delays')
+    .insert({ user_id: userId, event_date: selectedDate });
+
+  if (error) {
+    setMsg(error.message);
+  } else {
+    // Update the UI state to mark the date
+    setStatusMap(prev => ({ ...prev, [selectedDate]: 'no_delays' }));
+    setMsg('Marked no delays.');
+    // Optionally clear any existing rows on UI if needed
+    setRows([]);
+  }
+}
+
+async function removeNoDelaysMark(date: string) {
+  if (!userId) return;
+  // Delete the "no delays" row for the user and date
+  const { error } = await supabaseBrowser
+    .from('discharge_no_delays')
+    .delete()
+    .eq('user_id', userId)
+    .eq('event_date', date);
+
+  if (error) {
+    setMsg(error.message);
+  }
+  // Note: UI buttons already clear the statusMap to 'none' after this call
+}
+
+
   async function addRow() {
     const cause = Object.keys(CAUSES)[0];
     const sub = CAUSES[cause][0];
