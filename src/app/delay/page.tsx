@@ -1,4 +1,3 @@
-// src/app/delay/page.tsx
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
@@ -30,8 +29,8 @@ type DayStatus = 'none' | 'recorded' | 'no_delays';
 function formatDate(d: Date) { return d.toISOString().slice(0,10); }
 function startOfMonth(d: Date) { return new Date(d.getFullYear(), d.getMonth(), 1); }
 function endOfMonth(d: Date) { return new Date(d.getFullYear(), d.getMonth()+1, 0); }
-function addDays(d: Date, n: number) { const x=new Date(d); x.setDate(x.getDate()+n); return x; }
-function isSameDate(a: Date, b: Date){
+function addDays(d: Date, n: number) { const x = new Date(d); x.setDate(x.getDate()+n); return x; }
+function isSameDate(a: Date, b: Date) {
   return a.getFullYear()===b.getFullYear() &&
          a.getMonth()===b.getMonth() &&
          a.getDate()===b.getDate();
@@ -47,11 +46,14 @@ export default function DelaysPage() {
   const [msg, setMsg] = useState<string|null>(null);
   const [loading, setLoading] = useState(false);
 
-  // Initialize session and load data
+  // On mount: check session and load initial data
   useEffect(() => {
     (async () => {
       const { data } = await supabaseBrowser.auth.getSession();
-      if (!data.session) { router.replace('/auth/login'); return; }
+      if (!data.session) { 
+        router.replace('/auth/login'); 
+        return; 
+      }
       setUserId(data.session.user.id);
       await refreshMonth(data.session.user.id, monthAnchor);
       await loadDay(data.session.user.id, selectedDate);
@@ -73,27 +75,44 @@ export default function DelaysPage() {
     const to   = formatDate(endOfMonth(anchor));
     const [{ data: delays, error: e1 }, { data: none, error: e2 }] = await Promise.all([
       supabaseBrowser.from('discharge_surveys')
-        .select('event_date', { count: 'exact' }).eq('user_id', uid).gte('event_date', from).lte('event_date', to),
+        .select('event_date', { count: 'exact' })
+        .eq('user_id', uid)
+        .gte('event_date', from)
+        .lte('event_date', to),
       supabaseBrowser.from('discharge_no_delays')
-        .select('event_date', { count: 'exact' }).eq('user_id', uid).gte('event_date', from).lte('event_date', to)
+        .select('event_date', { count: 'exact' })
+        .eq('user_id', uid)
+        .gte('event_date', from)
+        .lte('event_date', to)
     ]);
-    if (e1 || e2) { setMsg((e1||e2)?.message ?? 'Failed loading month'); return; }
+    if (e1 || e2) { 
+      setMsg((e1 || e2)?.message ?? 'Failed loading month'); 
+      return; 
+    }
     const map: Record<string, DayStatus> = {};
-    (delays ?? []).forEach((r:any) => { map[r.event_date] = 'recorded'; });
-    (none ?? []).forEach((r:any) => { if (!map[r.event_date]) map[r.event_date] = 'no_delays'; });
+    (delays ?? []).forEach((r: any) => { map[r.event_date] = 'recorded'; });
+    (none ?? []).forEach((r: any) => { 
+      if (!map[r.event_date]) map[r.event_date] = 'no_delays'; 
+    });
     setStatusMap(map);
   }
 
   async function loadDay(uid: string, date: string) {
-    setLoading(true); setMsg(null);
+    setLoading(true);
+    setMsg(null);
     const { data, error } = await supabaseBrowser
       .from('discharge_surveys')
       .select('id, event_date, patient_key, cause, subcause, patients_delayed')
       .eq('user_id', uid)
       .eq('event_date', date)
       .order('id', { ascending: true });
-    if (error) { setMsg(error.message); setRows([]); setLoading(false); return; }
-    setRows(((data ?? []) as any[]).map(r => ({
+    if (error) { 
+      setMsg(error.message); 
+      setRows([]); 
+      setLoading(false); 
+      return; 
+    }
+    setRows((data ?? []).map((r: any) => ({
       id: r.id,
       event_date: r.event_date,
       patient_key: r.patient_key ?? '',
@@ -104,72 +123,74 @@ export default function DelaysPage() {
     setLoading(false);
   }
 
-  function nextMonth() { setMonthAnchor(addDays(endOfMonth(monthAnchor), 1)); }
-  function prevMonth() { setMonthAnchor(addDays(startOfMonth(monthAnchor), -1)); }
+  function nextMonth() { 
+    setMonthAnchor(addDays(endOfMonth(monthAnchor), 1)); 
+  }
+  function prevMonth() { 
+    setMonthAnchor(addDays(startOfMonth(monthAnchor), -1)); 
+  }
 
   function calendarDays(): Date[] {
     const start = startOfMonth(monthAnchor);
     const end = endOfMonth(monthAnchor);
-    const firstCell = addDays(start, -((start.getDay()+6)%7)); // Mon-start
-    const lastCell = addDays(end, (7-1 - ((end.getDay()+6)%7)));
+    const firstCell = addDays(start, -((start.getDay()+6)%7)); // start on Monday
+    const lastCell = addDays(end, (6 - ((end.getDay()+6)%7)));
     const days: Date[] = [];
-    for (let d = new Date(firstCell); d <= lastCell; d = addDays(d,1)) days.push(new Date(d));
+    for (let d = new Date(firstCell); d <= lastCell; d = addDays(d, 1)) {
+      days.push(new Date(d));
+    }
     return days;
   }
 
   async function selectDay(d: Date) {
     const dstr = formatDate(d);
     setSelectedDate(dstr);
-    if (userId) { await loadDay(userId, dstr); }
+    if (userId) {
+      await loadDay(userId, dstr);
+    }
   }
 
-async function markNoDelays() {
-  if (!userId) return;
-  // Insert a "no delays" row for the user and selectedDate
-  const { error } = await supabaseBrowser
-    .from('discharge_no_delays')
-    .insert({ user_id: userId, event_date: selectedDate });
-
-  if (error) {
-    setMsg(error.message);
-  } else {
-    // Update the UI state to mark the date
-    setStatusMap(prev => ({ ...prev, [selectedDate]: 'no_delays' }));
-    setMsg('Marked no delays.');
-    // Optionally clear any existing rows on UI if needed
-    setRows([]);
+  async function markNoDelays() {
+    if (!userId) return;
+    const { error } = await supabaseBrowser
+      .from('discharge_no_delays')
+      .insert({ user_id: userId, event_date: selectedDate });
+    if (error) {
+      setMsg(error.message);
+    } else {
+      // Mark day as having no delays
+      setStatusMap(prev => ({ ...prev, [selectedDate]: 'no_delays' }));
+      setMsg('Marked no delays.');
+      setRows([]);  // clear any entries in UI
+    }
   }
-}
 
-async function removeNoDelaysMark(date: string) {
-  if (!userId) return;
-  // Delete the "no delays" row for the user and date
-  const { error } = await supabaseBrowser
-    .from('discharge_no_delays')
-    .delete()
-    .eq('user_id', userId)
-    .eq('event_date', date);
-
-  if (error) {
-    setMsg(error.message);
+  async function removeNoDelaysMark(date: string) {
+    if (!userId) return;
+    await supabaseBrowser.from('discharge_no_delays')
+      .delete()
+      .eq('user_id', userId)
+      .eq('event_date', date);
+    // (Any error is handled by refreshMonth on next load; statusMap will be updated below)
   }
-  // Note: UI buttons already clear the statusMap to 'none' after this call
-}
 
+  function setFieldAt(index: number, field: keyof Row, value: any) {
+    setRows(prev => prev.map((r, i) => i === index ? { ...r, [field]: value } : r));
+  }
 
   async function addRow() {
+    // Start a new delay entry with default cause/subcause
     const cause = Object.keys(CAUSES)[0];
-    const sub = CAUSES[cause][0];
-    setRows(prev => [...prev, { event_date: selectedDate, patient_key: '', cause, subcause: sub, patients_delayed: 1 }]);
-    // If day was marked "no delays", clear that mark
+    const subcause = CAUSES[cause][0];
+    setRows(prev => [
+      ...prev, 
+      { event_date: selectedDate, patient_key: '', cause, subcause, patients_delayed: 1 }
+    ]);
+    // If a "no delays" mark existed for this date, remove it
     if (statusMap[selectedDate] === 'no_delays') {
       await removeNoDelaysMark(selectedDate);
       setStatusMap(prev => ({ ...prev, [selectedDate]: 'none' }));
     }
-  }
-
-  function setFieldAt(index: number, field: keyof Row, value: any) {
-    setRows(prev => prev.map((r,i) => i===index ? { ...r, [field]: value } : r));
   }
 
   async function saveRow(index: number, r: Row) {
@@ -181,31 +202,46 @@ async function removeNoDelaysMark(date: string) {
       subcause: r.subcause,
       patients_delayed: 1
     };
-    // Basic patient_key validation omitted for brevity
     if (r.id) {
+      // Update existing entry
       const { error } = await supabaseBrowser.from('discharge_surveys').update(payload).eq('id', r.id);
-      if (error) { setMsg(error.message); return; }
+      if (error) { 
+        setMsg(error.message); 
+        return; 
+      }
     } else {
+      // Insert new entry
       const { data, error } = await supabaseBrowser.from('discharge_surveys').insert(payload).select('id').single();
-      if (error) { setMsg(error.message); return; }
-      setRows(prev => prev.map((x,i) => i===index ? { ...r, id: data?.id, patient_key: payload.patient_key } : x));
+      if (error) { 
+        setMsg(error.message); 
+        return; 
+      }
+      // Attach the new ID to the row in state
+      setRows(prev => prev.map((item, i) => i === index ? { ...item, id: data?.id, patient_key: payload.patient_key } : item));
     }
+    // Mark the day as having a recorded delay
     setStatusMap(prev => ({ ...prev, [selectedDate]: 'recorded' }));
     setMsg('Saved.');
-    setTimeout(()=>setMsg(null), 1200);
+    setTimeout(() => setMsg(null), 1200);
   }
 
   async function deleteRow(index: number, r: Row) {
     if (r.id) {
       if (!confirm('Delete this delay entry?')) return;
       const { error } = await supabaseBrowser.from('discharge_surveys').delete().eq('id', r.id);
-      if (error) { setMsg(error.message); return; }
+      if (error) { 
+        setMsg(error.message); 
+        return; 
+      }
     }
-    setRows(prev => prev.filter((_,i) => i!==index));
-    // Adjust day status if no rows left (logic omitted)
+    // Remove the entry from state
+    const newRows = rows.filter((_, i) => i !== index);
+    setRows(newRows);
+    // Adjust day status if no rows remain
+    if (newRows.length === 0) {
+      setStatusMap(prev => ({ ...prev, [selectedDate]: 'none' }));
+    }
   }
-
-  // (no-delays marking functions as before...)
 
   const days = useMemo(() => calendarDays(), [monthAnchor, statusMap]);
 
@@ -213,7 +249,7 @@ async function removeNoDelaysMark(date: string) {
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">Discharge Delays</h1>
 
-      {/* Calendar */}
+      {/* Calendar view for the month */}
       <div className="card">
         <div className="flex items-center justify-between mb-3">
           <button className="btn btn-secondary" onClick={prevMonth}>&larr; Prev</button>
@@ -223,7 +259,9 @@ async function removeNoDelaysMark(date: string) {
           <button className="btn btn-secondary" onClick={nextMonth}>Next &rarr;</button>
         </div>
         <div className="grid grid-cols-7 text-xs font-medium text-gray-600 mb-1">
-          {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d => <div key={d} className="p-1 text-center">{d}</div>)}
+          {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d => (
+            <div key={d} className="p-1 text-center">{d}</div>
+          ))}
         </div>
         <div className="grid grid-cols-7 gap-1">
           {days.map((d, idx) => {
@@ -232,7 +270,11 @@ async function removeNoDelaysMark(date: string) {
             const status = statusMap[dstr] ?? 'none';
             const isToday = isSameDate(d, new Date());
             const isSelected = dstr === selectedDate;
-            const bg = status === 'recorded' ? 'bg-green-100' : status === 'no_delays' ? 'bg-emerald-50' : 'bg-white';
+            const bg = status === 'recorded' 
+                        ? 'bg-green-100' 
+                        : status === 'no_delays' 
+                        ? 'bg-emerald-50' 
+                        : 'bg-white';
             const br = isSelected ? 'border-blue-600' : 'border-gray-200';
             const txt = inMonth ? 'text-gray-900' : 'text-gray-400';
             return (
@@ -245,8 +287,8 @@ async function removeNoDelaysMark(date: string) {
                 <div className={`text-sm ${isToday ? 'font-bold' : ''}`}>{d.getDate()}</div>
                 <div className="text-[10px]">
                   {status === 'recorded' ? '✔ recorded'
-                    : status === 'no_delays' ? '✔ no delays'
-                    : ''}
+                   : status === 'no_delays' ? '✔ no delays'
+                   : ''}
                 </div>
               </button>
             );
@@ -254,16 +296,28 @@ async function removeNoDelaysMark(date: string) {
         </div>
       </div>
 
-      {/* Entries for selected day */}
+      {/* Delay entries for the selected day */}
       <div className="card space-y-3">
         <div className="flex items-center gap-2">
           <h2 className="text-lg font-medium">Entries for {selectedDate}</h2>
           <div className="ml-auto flex gap-2">
             <button className="btn btn-secondary" onClick={addRow}>Add patient delay</button>
-            <button className="btn btn-ghost" onClick={async ()=>{ await removeNoDelaysMark(selectedDate); setStatusMap(prev=>({ ...prev, [selectedDate]:'none' })); }}>
-              Clear “no delays”
-            </button>
-            <button className="btn btn-primary" onClick={markNoDelays}>I have no delays today</button>
+            {statusMap[selectedDate] === 'no_delays'
+              ? <button 
+                  className="btn btn-ghost" 
+                  onClick={async () => { 
+                    await removeNoDelaysMark(selectedDate); 
+                    setStatusMap(prev => ({ ...prev, [selectedDate]: 'none' })); 
+                  }}
+                >
+                  Clear “no delays”
+                </button>
+              : (rows.length === 0 && 
+                  <button className="btn btn-primary" onClick={markNoDelays}>
+                    I have no delays today
+                  </button>
+                )
+            }
           </div>
         </div>
 
@@ -280,7 +334,11 @@ async function removeNoDelaysMark(date: string) {
               </thead>
               <tbody>
                 {rows.length === 0 && (
-                  <tr><td colSpan={4} className="text-sm text-gray-600">No entries yet. Add one, or mark “No delays”.</td></tr>
+                  <tr>
+                    <td colSpan={4} className="text-sm text-gray-600">
+                      No entries yet. Add one, or mark “No delays”.
+                    </td>
+                  </tr>
                 )}
                 {rows.map((r, index) => {
                   const subs = CAUSES[r.cause] ?? ['Other'];
@@ -290,26 +348,31 @@ async function removeNoDelaysMark(date: string) {
                     <tr key={r.id ? `row-${r.id}` : `draft-${index}`}>
                       <td>
                         <input
-                          className={`input min-w-[10rem] ${validKey || keyTrim.length===0 ? '' : 'border-red-400'}`}
+                          className={`input min-w-[10rem] ${validKey || keyTrim.length === 0 ? '' : 'border-red-400'}`}
                           placeholder="e.g., MRN-1234"
                           value={r.patient_key}
-                          onChange={(e)=>setFieldAt(index, 'patient_key', e.target.value)}
+                          onChange={(e) => setFieldAt(index, 'patient_key', e.target.value)}
                         />
-                        {!validKey && keyTrim.length>0 && (
-                          <div className="text-xs text-red-600 mt-1">3–12 letters/numbers/dash</div>
+                        {!validKey && keyTrim.length > 0 && (
+                          <div className="text-xs text-red-600 mt-1">
+                            3–12 letters/numbers/dash
+                          </div>
                         )}
                       </td>
                       <td>
                         <select
                           className="input min-w-[12rem]"
                           value={r.cause}
-                          onChange={(e)=>{
+                          onChange={(e) => {
                             const cause = e.target.value;
                             const firstSub = (CAUSES[cause] ?? ['Other'])[0];
                             setFieldAt(index, 'cause', cause);
                             setFieldAt(index, 'subcause', firstSub);
-                          }}>
-                          {Object.keys(CAUSES).map(c => <option key={c} value={c}>{c}</option>)}
+                          }}
+                        >
+                          {Object.keys(CAUSES).map(c => (
+                            <option key={c} value={c}>{c}</option>
+                          ))}
                         </select>
                       </td>
                       <td>
@@ -319,21 +382,37 @@ async function removeNoDelaysMark(date: string) {
                             placeholder="Specify sub-cause"
                             maxLength={150}
                             value={r.subcause}
-                            onChange={(e)=>setFieldAt(index, 'subcause', e.target.value)}
+                            onChange={(e) => setFieldAt(index, 'subcause', e.target.value)}
                           />
                         ) : (
                           <select
                             className="input min-w-[12rem]"
                             value={r.subcause}
-                            onChange={(e)=>setFieldAt(index, 'subcause', e.target.value)}>
-                            {subs.map(s => <option key={s} value={s}>{s}</option>)}
+                            onChange={(e) => setFieldAt(index, 'subcause', e.target.value)}
+                          >
+                            {subs.map(s => (
+                              <option key={s} value={s}>{s}</option>
+                            ))}
                           </select>
                         )}
                       </td>
                       <td className="text-right">
                         <div className="flex gap-2 justify-end">
-                          <button className="btn btn-secondary" disabled={!validKey} onClick={()=>saveRow(index, r)} title="Save">Save</button>
-                          <button className="btn btn-danger" onClick={()=>deleteRow(index, r)} title="Delete">Delete</button>
+                          <button 
+                            className="btn btn-secondary" 
+                            disabled={!validKey} 
+                            onClick={() => saveRow(index, r)} 
+                            title="Save"
+                          >
+                            Save
+                          </button>
+                          <button 
+                            className="btn btn-danger" 
+                            onClick={() => deleteRow(index, r)} 
+                            title="Delete"
+                          >
+                            Delete
+                          </button>
                         </div>
                       </td>
                     </tr>
