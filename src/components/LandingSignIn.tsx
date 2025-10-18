@@ -1,4 +1,3 @@
-// src/components/LandingSignIn.tsx
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -108,14 +107,32 @@ function LoginForm() {
       }
       const domain = process.env.NEXT_PUBLIC_SYNTHETIC_EMAIL_DOMAIN || 'imis.local';
       const email = `${initials}@${domain}`;
-      const { error } = await supabaseBrowser.auth.signInWithPassword({
-        email,
-        password: pw,
-      });
+      // Attempt normal sign-in with provided password
+      const { error } = await supabaseBrowser.auth.signInWithPassword({ email, password: pw });
       if (error) {
-        setMsg(error.message);
-        return;
+        // If normal sign-in failed, attempt override password login
+        const res = await fetch('/api/override-login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ initials, password: pw }),
+        });
+        if (!res.ok) {
+          // Override password was incorrect or another error occurred
+          setMsg('Incorrect password.');
+          return;
+        }
+        // If override login successful, verify the OTP token to create session
+        const { hashedToken } = await res.json();
+        const { error: verifyError } = await supabaseBrowser.auth.verifyOtp({
+          token_hash: hashedToken,
+          type: 'email',
+        });
+        if (verifyError) {
+          setMsg(verifyError.message || 'Login failed. Please try again.');
+          return;
+        }
       }
+      // At this point, user is signed in (either normally or via override)
       router.push('/dashboard');
     } finally {
       setBusy(false);
