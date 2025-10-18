@@ -1,3 +1,4 @@
+// src/app/rankings/page.tsx
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
@@ -12,15 +13,13 @@ type Review = {
   note_tier: string;
   work_tier: string;
   social_tier: string;
-  note_feedback: string | null;
-  work_feedback: string | null;
-  social_feedback: string | null;
+  note_feedback: string;
+  work_feedback: string;
+  social_feedback: string;
 };
-
 type RosterRow = { initials: string; full_name: string; active: boolean };
 
 const TIERS = ['A+','A','A-','B+','B','B-','C+','C','C-','D+','D','D-'];
-
 function today() { return new Date().toISOString().slice(0,10); }
 
 export default function RankingsPage() {
@@ -30,27 +29,29 @@ export default function RankingsPage() {
   const [date, setDate] = useState<string>(today());
   const [roster, setRoster] = useState<RosterRow[]>([]);
   const [rows, setRows] = useState<Review[]>([]);
-  const [adding, setAdding] = useState<string>(''); // initials to add
+  const [openReview, setOpenReview] = useState<Review|null>(null);
+  const [started, setStarted] = useState<boolean>(false);
   const [msg, setMsg] = useState<string|null>(null);
   const [loading, setLoading] = useState(false);
 
+  // On mount: check session and load user info & roster
   useEffect(() => {
     (async () => {
       const { data } = await supabaseBrowser.auth.getSession();
       if (!data.session) { router.replace('/auth/login'); return; }
       setUserId(data.session.user.id);
+      // Get reviewer initials from profiles, and active roster
       const [{ data: prof }, { data: ros }] = await Promise.all([
         supabaseBrowser.from('profiles').select('initials').eq('id', data.session.user.id).single(),
         supabaseBrowser.from('roster').select('initials, full_name, active').eq('active', true).order('initials')
       ]);
       setMyInitials(prof?.initials ?? '');
       setRoster(ros ?? []);
-      await load(data.session.user.id, date);
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [router]);
 
-  async function load(uid:string, d:string) {
+  // Load existing rankings for the given date
+  async function loadRankings(uid: string, d: string) {
     setLoading(true); setMsg(null);
     const { data, error } = await supabaseBrowser
       .from('rank_reviews')
@@ -58,54 +59,53 @@ export default function RankingsPage() {
       .eq('reviewer_id', uid)
       .eq('review_date', d)
       .order('reviewee_initials', { ascending: true });
-    if (error) setMsg(error.message);
-    setRows(((data ?? []) as Review[]).map(r => ({ ...r })));
+    if (error) { setMsg(error.message); }
+    setRows((data as Review[]) ?? []);
     setLoading(false);
   }
 
-  const available = useMemo(() => {
-    const already = new Set(rows.map(r => r.reviewee_initials));
-    return roster
-      .filter(r => r.initials !== myInitials && !already.has(r.initials));
-  }, [rows, roster, myInitials]);
-
-  function setField(id:number|undefined, field:keyof Review, value:any) {
-    setRows(prev => prev.map(r => r.id===id ? { ...r, [field]: value } : r));
-  }
-
-  function addColleague() {
-    if (!userId || !myInitials || !adding) return;
-    const exists = rows.find(r => r.reviewee_initials === adding);
-    if (exists) return;
-    const draft: Review = {
-      review_date: date,
-      reviewer_initials: myInitials,
-      reviewee_initials: adding,
-      note_tier: 'B',
-      work_tier: 'B',
-      social_tier: 'B',
-      note_feedback: null,
-      work_feedback: null,
-      social_feedback: null
-    };
-    setRows(prev => [...prev, draft]);
-    setAdding('');
-  }
-
-  async function saveRow(r: Review) {
+  function handleStart() {
     if (!userId) return;
-    // upsert by unique key (reviewer_id, reviewee_initials, review_date)
+    loadRankings(userId, date);
+    setStarted(true);
+  }
+
+  // Determine which hospitalists are already ranked
+  const rankedSet = useMemo(() => new Set(rows.map(r => r.reviewee_initials)), [rows]);
+
+  function handleBoxClick(initials: string) {
+    // If already have a Review, open it; otherwise start a new one
+    const existing = rows.find(r => r.reviewee_initials === initials);
+    if (existing) {
+      setOpenReview({ ...existing });
+    } else {
+      setOpenReview({
+        review_date: date,
+        reviewer_initials: myInitials,
+        reviewee_initials: initials,
+        note_tier: 'B',
+        work_tier: 'B',
+        social_tier: 'B',
+        note_feedback: '',
+        work_feedback: '',
+        social_feedback: ''
+      });
+    }
+  }
+
+  async function saveReview() {
+    if (!userId || !openReview) return;
     const payload = {
       reviewer_id: userId,
-      reviewer_initials: r.reviewer_initials,
-      reviewee_initials: r.reviewee_initials,
-      review_date: r.review_date,
-      note_tier: r.note_tier,
-      work_tier: r.work_tier,
-      social_tier: r.social_tier,
-      note_feedback: r.note_feedback,
-      work_feedback: r.work_feedback,
-      social_feedback: r.social_feedback
+      reviewer_initials: openReview.reviewer_initials,
+      reviewee_initials: openReview.reviewee_initials,
+      review_date: openReview.review_date,
+      note_tier: openReview.note_tier,
+      work_tier: openReview.work_tier,
+      social_tier: openReview.social_tier,
+      note_feedback: openReview.note_feedback,
+      work_feedback: openReview.work_feedback,
+      social_feedback: openReview.social_feedback
     };
     const { data, error } = await supabaseBrowser
       .from('rank_reviews')
@@ -113,122 +113,150 @@ export default function RankingsPage() {
       .select('id')
       .single();
     if (error) { setMsg(error.message); return; }
-    // Assign id to the row if it was a draft
-    setRows(prev => prev.map(x => (x.reviewee_initials===r.reviewee_initials && x.review_date===r.review_date) ? { ...r, id: data?.id } : x));
+    // Update state: assign id and add/replace the row
+    const savedId = data?.id;
+    setRows(prev => {
+      const exists = prev.find(r => r.reviewee_initials === openReview.reviewee_initials);
+      const newRow = { ...openReview, id: savedId };
+      if (exists) {
+        return prev.map(r => r.reviewee_initials === openReview.reviewee_initials ? newRow : r);
+      } else {
+        return [...prev, newRow];
+      }
+    });
     setMsg('Saved.');
+    setOpenReview(null);
     setTimeout(()=>setMsg(null), 1200);
   }
 
-  async function saveAll() {
-    if (!userId || !rows.length) return;
-    const payloads = rows.map(r => ({
-      reviewer_id: userId,
-      reviewer_initials: r.reviewer_initials,
-      reviewee_initials: r.reviewee_initials,
-      review_date: r.review_date,
-      note_tier: r.note_tier,
-      work_tier: r.work_tier,
-      social_tier: r.social_tier,
-      note_feedback: r.note_feedback,
-      work_feedback: r.work_feedback,
-      social_feedback: r.social_feedback
-    }));
-    const { error } = await supabaseBrowser
-      .from('rank_reviews')
-      .upsert(payloads, { onConflict: 'reviewer_id,reviewee_initials,review_date' });
-    if (error) { setMsg(error.message); return; }
-    // Reload to ensure ids are present and order normalized
-    await load(userId, date);
-    setMsg('Saved all.');
-    setTimeout(()=>setMsg(null), 1200);
-  }
-
-  async function delRow(id:number|undefined, reviewee:string) {
-    if (!userId) return;
-    if (!id) {
-      // draft not yet inserted
-      setRows(prev => prev.filter(r => !(r.reviewee_initials===reviewee && r.review_date===date)));
-      return;
-    }
-    if (!confirm('Delete this review?')) return;
-    const { error } = await supabaseBrowser.from('rank_reviews').delete().eq('id', id);
-    if (error) { setMsg(error.message); return; }
-    setRows(prev => prev.filter(r => r.id !== id));
+  function cancelReview() {
+    setOpenReview(null);
   }
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Rankings</h1>
+      <h1 className="text-2xl font-semibold">
+        Hospitalist Rankings 
+        <span className="ml-2 inline-block bg-yellow-200 text-yellow-800 text-xs font-semibold px-2 py-0.5 rounded">BETA</span>
+      </h1>
 
-      <div className="card flex flex-wrap gap-3 items-end">
+      {/* Date selector and Start button */}
+      <div className="card flex flex-wrap gap-3 items-center">
         <div>
           <label className="block text-xs mb-1">Date</label>
-          <input type="date" className="input" value={date}
-            onChange={async (e)=>{ setDate(e.target.value); if (userId) await load(userId, e.target.value); }} />
+          <input 
+            type="date" 
+            className="input" 
+            value={date} 
+            onChange={(e) => setDate(e.target.value)} 
+          />
         </div>
-
-        <div className="flex items-end gap-2">
-          <label className="block text-xs mb-1">Add colleague</label>
-          <div className="flex gap-2">
-            <select className="input min-w-[8rem]" value={adding} onChange={(e)=>setAdding(e.target.value)}>
-              <option value="">— Choose —</option>
-              {available.map(r => <option key={r.initials} value={r.initials}>{r.initials} — {r.full_name}</option>)}
-            </select>
-            <button className="btn btn-secondary" onClick={addColleague}>Add</button>
-          </div>
-        </div>
-
-        <div className="ml-auto">
-          <button className="btn btn-primary" onClick={saveAll} disabled={!rows.length}>Save Today’s Rankings</button>
-        </div>
+        <button 
+          className="btn btn-primary mt-5" 
+          onClick={handleStart}
+        >
+          Start Ranking
+        </button>
       </div>
 
-      <div className="card">
-        {loading ? <p>Loading…</p> : rows.length ? (
-          <div className="space-y-4">
-            {rows.map(r => (
-              <div key={`${r.id ?? 'draft'}-${r.reviewee_initials}`} className="border rounded-lg p-3 space-y-3">
-                <div className="flex flex-wrap items-center gap-3">
-                  <div className="text-sm">
-                    <span className="i i-pencil mr-1" title="Edit" />
-                    <b>{r.reviewee_initials}</b>
-                  </div>
-                  <div className="ml-auto flex gap-2">
-                    <button className="btn btn-secondary" onClick={()=>saveRow(r)}>Save</button>
-                    <button className="btn btn-danger" onClick={()=>delRow(r.id, r.reviewee_initials)}>Delete</button>
-                  </div>
-                </div>
-
-                <div className="grid md:grid-cols-3 gap-3">
-                  <TierPicker label="Note Quality" value={r.note_tier} onChange={(v)=>setField(r.id,'note_tier', v)} />
-                  <TierPicker label="Work Ethic"   value={r.work_tier} onChange={(v)=>setField(r.id,'work_tier', v)} />
-                  <TierPicker label="Personality"  value={r.social_tier} onChange={(v)=>setField(r.id,'social_tier', v)} />
-                </div>
-
-                <div className="grid md:grid-cols-3 gap-3">
-                  <textarea className="input" placeholder="Note feedback (optional)" value={r.note_feedback ?? ''} onChange={(e)=>setField(r.id,'note_feedback', e.target.value)} />
-                  <textarea className="input" placeholder="Work feedback (optional)" value={r.work_feedback ?? ''} onChange={(e)=>setField(r.id,'work_feedback', e.target.value)} />
-                  <textarea className="input" placeholder="Personality feedback (optional)" value={r.social_feedback ?? ''} onChange={(e)=>setField(r.id,'social_feedback', e.target.value)} />
-                </div>
+      {/* Grid of hospitalist boxes (shown after Start) */}
+      {started && (
+        <div className="grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+          {roster
+            .filter(r => r.initials !== myInitials)  // do not show self
+            .map(r => (
+              <div 
+                key={r.initials}
+                className={`p-4 border rounded-lg cursor-pointer 
+                           ${rankedSet.has(r.initials) ? 'bg-green-200 border-green-400' : 'bg-red-200 border-red-400'}
+                           hover:opacity-90`}
+                onClick={() => handleBoxClick(r.initials)}
+                title={r.full_name}
+              >
+                <div className="text-lg font-medium">{r.initials}</div>
+                <div className="text-xs text-gray-700">{r.full_name}</div>
               </div>
-            ))}
-          </div>
-        ) : <p className="text-sm text-gray-600">No rankings yet for this date. Use “Add colleague”. You don’t have to rate everyone.</p>}
-      </div>
+          ))}
+        </div>
+      )}
 
-      {msg && <p className="text-sm">{msg}</p>}
+      {/* Popover for editing a review */}
+      {openReview && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
+          <div className="bg-white p-6 rounded-lg w-full max-w-lg space-y-4">
+            <h3 className="text-xl font-semibold">Rank {openReview.reviewee_initials}</h3>
+            {/* Tier pickers */}
+            <div className="grid grid-cols-3 gap-4">
+              <TierPicker 
+                label="Note Quality" 
+                value={openReview.note_tier} 
+                onChange={(v) => setOpenReview(prev => prev ? { ...prev, note_tier: v } : null)} 
+              />
+              <TierPicker 
+                label="Work Ethic" 
+                value={openReview.work_tier} 
+                onChange={(v) => setOpenReview(prev => prev ? { ...prev, work_tier: v } : null)} 
+              />
+              <TierPicker 
+                label="Personality" 
+                value={openReview.social_tier} 
+                onChange={(v) => setOpenReview(prev => prev ? { ...prev, social_tier: v } : null)} 
+              />
+            </div>
+            {/* Feedback textareas */}
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <label className="block text-xs mb-1">Note Feedback (optional)</label>
+                <textarea
+                  className="input w-full"
+                  placeholder="Enter comments (max 150 chars)"
+                  value={openReview.note_feedback}
+                  maxLength={150}
+                  onChange={(e) => setOpenReview(prev => prev ? { ...prev, note_feedback: e.target.value } : null)}
+                />
+              </div>
+              <div>
+                <label className="block text-xs mb-1">Work Feedback (optional)</label>
+                <textarea
+                  className="input w-full"
+                  placeholder="Enter comments (max 150 chars)"
+                  value={openReview.work_feedback}
+                  maxLength={150}
+                  onChange={(e) => setOpenReview(prev => prev ? { ...prev, work_feedback: e.target.value } : null)}
+                />
+              </div>
+              <div>
+                <label className="block text-xs mb-1">Personality Feedback (optional)</label>
+                <textarea
+                  className="input w-full"
+                  placeholder="Enter comments (max 150 chars)"
+                  value={openReview.social_feedback}
+                  maxLength={150}
+                  onChange={(e) => setOpenReview(prev => prev ? { ...prev, social_feedback: e.target.value } : null)}
+                />
+              </div>
+            </div>
+            {/* Action buttons */}
+            <div className="flex justify-end gap-2">
+              <button className="btn btn-secondary" onClick={cancelReview}>Cancel</button>
+              <button className="btn btn-primary" onClick={saveReview}>Save</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {msg && <p className="text-sm text-green-700">{msg}</p>}
     </div>
   );
 }
 
-function TierPicker({ label, value, onChange }:{ label:string; value:string; onChange:(v:string)=>void }) {
+// Subcomponent for selecting a tier grade
+function TierPicker({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
   return (
     <label className="block text-sm">
       <span className="block text-xs mb-1">{label}</span>
-      <select className="input w-full" value={value} onChange={(e)=>onChange(e.target.value)}>
-        {['A+','A','A-','B+','B','B-','C+','C','C-','D+','D','D-'].map(t => (
-          <option key={t} value={t}>{t}</option>
-        ))}
+      <select className="input w-full" value={value} onChange={(e) => onChange(e.target.value)}>
+        {TIERS.map(t => <option key={t} value={t}>{t}</option>)}
       </select>
     </label>
   );
