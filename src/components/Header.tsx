@@ -11,14 +11,31 @@ export default function Header() {
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabaseBrowser.auth.getSession();
-      if (!data.session) return;
+      const { data: sessionData } = await supabaseBrowser.auth.getSession();
+      if (!sessionData.session) return;
+      const userId = sessionData.session.user.id;
+      // Fetch the user's profile (including initials and admin flag)
       const { data: prof } = await supabaseBrowser
         .from('profiles')
-        .select('is_admin')
-        .eq('id', data.session.user.id)
+        .select('initials, is_admin')
+        .eq('id', userId)
         .single();
-      setIsAdmin(!!prof?.is_admin);
+      let adminAccess = false;
+      if (prof) {
+        // Grant access if profile says admin or if user is RG
+        if (prof.is_admin) adminAccess = true;
+        if ((prof.initials ?? '').toUpperCase() === 'RG') adminAccess = true;
+        // If not already admin via profile or RG, check roster marking
+        if (!adminAccess) {
+          const { data: rosterEntry } = await supabaseBrowser
+            .from('roster')
+            .select('is_admin')
+            .eq('initials', prof.initials)
+            .single();
+          if (rosterEntry?.is_admin) adminAccess = true;
+        }
+      }
+      setIsAdmin(adminAccess);
     })();
   }, []);
 
@@ -32,7 +49,11 @@ export default function Header() {
             <Link href="/delay" className="text-gray-600 hover:text-gray-900">Delays</Link>
             <Link href="/rankings" className="text-gray-600 hover:text-gray-900">Rankings</Link>
             <Link href="/ideas" className="text-gray-600 hover:text-gray-900">Ideas</Link>
-            {isAdmin && <Link href="/admin" className="text-gray-600 hover:text-gray-900">Admin</Link>}
+            {isAdmin && (
+              <Link href="/admin" className="text-gray-600 hover:text-gray-900">
+                Admin
+              </Link>
+            )}
           </nav>
         )}
       </div>
