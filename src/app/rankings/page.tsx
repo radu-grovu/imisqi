@@ -1,4 +1,3 @@
-// src/app/rankings/page.tsx
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
@@ -38,9 +37,12 @@ export default function RankingsPage() {
   useEffect(() => {
     (async () => {
       const { data } = await supabaseBrowser.auth.getSession();
-      if (!data.session) { router.replace('/auth/login'); return; }
+      if (!data.session) { 
+        router.replace('/auth/login'); 
+        return; 
+      }
       setUserId(data.session.user.id);
-      // Get reviewer initials from profiles, and active roster
+      // Get reviewer initials and active roster
       const [{ data: prof }, { data: ros }] = await Promise.all([
         supabaseBrowser.from('profiles').select('initials').eq('id', data.session.user.id).single(),
         supabaseBrowser.from('roster').select('initials, full_name, active').eq('active', true).order('initials')
@@ -52,29 +54,39 @@ export default function RankingsPage() {
 
   // Load existing rankings for the given date
   async function loadRankings(uid: string, d: string) {
-    setLoading(true); setMsg(null);
+    setLoading(true);
+    setMsg(null);
     const { data, error } = await supabaseBrowser
       .from('rank_reviews')
       .select('id, review_date, reviewer_initials, reviewee_initials, note_tier, work_tier, social_tier, note_feedback, work_feedback, social_feedback')
       .eq('reviewer_id', uid)
       .eq('review_date', d)
       .order('reviewee_initials', { ascending: true });
-    if (error) { setMsg(error.message); }
+    if (error) {
+      setMsg(error.message);
+    }
     setRows((data as Review[]) ?? []);
     setLoading(false);
   }
 
   function handleStart() {
     if (!userId) return;
-    loadRankings(userId, date);
     setStarted(true);
   }
+
+  // Auto-load rankings whenever a date is selected after starting
+  useEffect(() => {
+    if (userId && started) {
+      loadRankings(userId, date);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, date, started]);
 
   // Determine which hospitalists are already ranked
   const rankedSet = useMemo(() => new Set(rows.map(r => r.reviewee_initials)), [rows]);
 
   function handleBoxClick(initials: string) {
-    // If already have a Review, open it; otherwise start a new one
+    // Open existing review or initialize a new one
     const existing = rows.find(r => r.reviewee_initials === initials);
     if (existing) {
       setOpenReview({ ...existing });
@@ -112,25 +124,50 @@ export default function RankingsPage() {
       .upsert(payload, { onConflict: 'reviewer_id,reviewee_initials,review_date' })
       .select('id')
       .single();
-    if (error) { setMsg(error.message); return; }
+    if (error) {
+      setMsg(error.message);
+      return;
+    }
     // Update state: assign id and add/replace the row
     const savedId = data?.id;
     setRows(prev => {
-      const exists = prev.find(r => r.reviewee_initials === openReview.reviewee_initials);
       const newRow = { ...openReview, id: savedId };
-      if (exists) {
-        return prev.map(r => r.reviewee_initials === openReview.reviewee_initials ? newRow : r);
+      const existsIndex = prev.findIndex(r => r.reviewee_initials === openReview.reviewee_initials);
+      if (existsIndex >= 0) {
+        // Replace existing review
+        const updated = [...prev];
+        updated[existsIndex] = newRow;
+        return updated;
       } else {
+        // Add new review
         return [...prev, newRow];
       }
     });
     setMsg('Saved.');
     setOpenReview(null);
-    setTimeout(()=>setMsg(null), 1200);
+    setTimeout(() => setMsg(null), 1200);
   }
 
   function cancelReview() {
     setOpenReview(null);
+  }
+
+  async function deleteReview() {
+    if (!openReview?.id || !userId) return;
+    if (!confirm('Delete this review?')) return;
+    const { error } = await supabaseBrowser
+      .from('rank_reviews')
+      .delete()
+      .eq('id', openReview.id);
+    if (error) { 
+      setMsg(error.message); 
+      return; 
+    }
+    // Remove the deleted review from state
+    setRows(prev => prev.filter(r => r.reviewee_initials !== openReview.reviewee_initials));
+    setOpenReview(null);
+    setMsg('Deleted.');
+    setTimeout(() => setMsg(null), 1200);
   }
 
   return (
@@ -163,7 +200,7 @@ export default function RankingsPage() {
       {started && (
         <div className="grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
           {roster
-            .filter(r => r.initials !== myInitials)  // do not show self
+            .filter(r => r.initials !== myInitials)  // exclude self
             .map(r => (
               <div 
                 key={r.initials}
@@ -180,12 +217,12 @@ export default function RankingsPage() {
         </div>
       )}
 
-      {/* Popover for editing a review */}
+      {/* Pop-up modal for editing a review */}
       {openReview && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
           <div className="bg-white p-6 rounded-lg w-full max-w-lg space-y-4">
             <h3 className="text-xl font-semibold">Rank {openReview.reviewee_initials}</h3>
-            {/* Tier pickers */}
+            {/* Tier selectors */}
             <div className="grid grid-cols-3 gap-4">
               <TierPicker 
                 label="Note Quality" 
@@ -203,7 +240,7 @@ export default function RankingsPage() {
                 onChange={(v) => setOpenReview(prev => prev ? { ...prev, social_tier: v } : null)} 
               />
             </div>
-            {/* Feedback textareas */}
+            {/* Feedback text areas */}
             <div className="grid grid-cols-3 gap-4">
               <div>
                 <label className="block text-xs mb-1">Note Feedback (optional)</label>
@@ -238,6 +275,9 @@ export default function RankingsPage() {
             </div>
             {/* Action buttons */}
             <div className="flex justify-end gap-2">
+              {openReview.id && (
+                <button className="btn btn-danger" onClick={deleteReview}>Delete</button>
+              )}
               <button className="btn btn-secondary" onClick={cancelReview}>Cancel</button>
               <button className="btn btn-primary" onClick={saveReview}>Save</button>
             </div>
