@@ -53,11 +53,11 @@ export default function DashboardPage() {
           </p>
         </a>
 
-        {/* Hospitalist Rankings option */}
-        <a href="/rankings" className="card hover:bg-gray-50 focus:ring focus:ring-brand-100 block">
-          <h2 className="text-lg font-medium mb-1">Hospitalist Rankings</h2>
+        {/* Hospitalist Survey option */}
+        <a href="/survey" className="card hover:bg-gray-50 focus:ring focus:ring-brand-100 block">
+          <h2 className="text-lg font-medium mb-1">Hospitalist Survey</h2>
           <p className="text-sm text-gray-700">
-            Rate your colleagues (note quality and work ethic) and provide anonymous feedback.
+            Complete the latest survey by selecting colleagues who meet each question's criteria.
           </p>
         </a>
 

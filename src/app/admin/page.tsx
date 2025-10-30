@@ -3,18 +3,18 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabaseBrowser } from '@/lib/supabaseBrowser';
-import RankingsAdmin from './_components/RankingsAdmin';
+import SurveyAdmin from './_components/SurveyAdmin';
 import IdeasAdmin from './_components/IdeasAdmin';
 import DischargeAdmin from './_components/DischargeAdmin';
 import RosterAdmin from './_components/RosterAdmin';
 
-type TabKey = 'rankings' | 'ideas' | 'discharge' | 'roster';
+type TabKey = 'survey' | 'ideas' | 'discharge' | 'roster';
 
 export default function AdminPage() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [tab, setTab] = useState<TabKey>('rankings');
+  const [tab, setTab] = useState<TabKey>('survey');
 
   useEffect(() => {
     (async () => {
@@ -67,11 +67,11 @@ export default function AdminPage() {
       <h1 className="text-2xl font-semibold">Admin</h1>
 
       <div className="flex gap-2 flex-wrap">
-        <button 
-          onClick={() => setTab('rankings')}
-          className={`btn ${tab === 'rankings' ? 'btn-primary' : 'btn-secondary'}`}
+        <button
+          onClick={() => setTab('survey')}
+          className={`btn ${tab === 'survey' ? 'btn-primary' : 'btn-secondary'}`}
         >
-          Hospitalist Rankings
+          Hospitalist Survey
         </button>
         <button 
           onClick={() => setTab('ideas')} 
@@ -93,7 +93,7 @@ export default function AdminPage() {
         </button>
       </div>
 
-      {tab === 'rankings' && <RankingsAdmin />}
+      {tab === 'survey' && <SurveyAdmin />}
       {tab === 'ideas' && <IdeasAdmin />}
       {tab === 'discharge' && <DischargeAdmin />}
       {tab === 'roster' && <RosterAdmin />}
