@@ -309,23 +309,47 @@ export default function HospitalistSurveyPage() {
                 </p>
                 <h2 className="text-lg font-semibold text-gray-900">{activeQuestion.prompt}</h2>
               </div>
-              <div className="flex gap-2">
-                <button
-                  className="btn btn-secondary"
-                  type="button"
-                  onClick={() => clearSelections(activeQuestion.id)}
-                  disabled={!(responses[activeQuestion.id]?.length)}
-                >
-                  Clear selections
-                </button>
-                <button
-                  className="btn btn-secondary"
-                  type="button"
-                  onClick={() => void loadResponses()}
-                  disabled={loadingResponses}
-                >
-                  {loadingResponses ? 'Refreshing…' : 'Load saved'}
-                </button>
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <div className="flex gap-2">
+                  <button
+                    className="btn btn-secondary"
+                    type="button"
+                    onClick={() => setCurrentIndex((idx) => Math.max(0, idx - 1))}
+                    disabled={currentIndex === 0}
+                  >
+                    Previous question
+                  </button>
+                  <button
+                    className="btn btn-secondary"
+                    type="button"
+                    onClick={() =>
+                      setCurrentIndex((idx) =>
+                        Math.min(totalQuestions - 1, idx + 1),
+                      )
+                    }
+                    disabled={currentIndex === totalQuestions - 1}
+                  >
+                    Next question
+                  </button>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    className="btn btn-secondary"
+                    type="button"
+                    onClick={() => clearSelections(activeQuestion.id)}
+                    disabled={!(responses[activeQuestion.id]?.length)}
+                  >
+                    Clear selections
+                  </button>
+                  <button
+                    className="btn btn-secondary"
+                    type="button"
+                    onClick={() => void loadResponses()}
+                    disabled={loadingResponses}
+                  >
+                    {loadingResponses ? 'Refreshing…' : 'Load saved'}
+                  </button>
+                </div>
               </div>
             </div>
             <p className="text-sm text-gray-600">
@@ -362,7 +386,7 @@ export default function HospitalistSurveyPage() {
             )}
           </div>
 
-          <div className="card flex flex-wrap items-center justify-between gap-3">
+          <div className="card">
             <div className="text-sm text-gray-600">
               {responses[activeQuestion.id]?.length ? (
                 <span>
@@ -371,28 +395,6 @@ export default function HospitalistSurveyPage() {
               ) : (
                 <span>No providers selected for this question.</span>
               )}
-            </div>
-            <div className="flex gap-2">
-              <button
-                className="btn btn-secondary"
-                type="button"
-                onClick={() => setCurrentIndex((idx) => Math.max(0, idx - 1))}
-                disabled={currentIndex === 0}
-              >
-                Previous question
-              </button>
-              <button
-                className="btn btn-secondary"
-                type="button"
-                onClick={() =>
-                  setCurrentIndex((idx) =>
-                    Math.min(totalQuestions - 1, idx + 1),
-                  )
-                }
-                disabled={currentIndex === totalQuestions - 1}
-              >
-                Next question
-              </button>
             </div>
           </div>
         </div>
