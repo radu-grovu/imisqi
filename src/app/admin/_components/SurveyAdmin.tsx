@@ -60,9 +60,31 @@ export default function SurveyAdmin() {
   const [loadingReport, setLoadingReport] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
+  async function ensureSchema() {
+    try {
+      const { data } = await supabaseBrowser.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) return;
+      const res = await fetch('/api/admin/bootstrap-survey', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const body = await res.text();
+        console.error('Failed to bootstrap survey schema', res.status, body);
+        setMsg('Unable to prepare survey tables. Please check server logs.');
+      }
+    } catch (err) {
+      console.error('Failed to bootstrap survey schema', err);
+      setMsg('Unable to prepare survey tables. Please check server logs.');
+    }
+  }
+
   useEffect(() => {
-    void loadVersions();
-    void loadRoster();
+    void (async () => {
+      await ensureSchema();
+      await Promise.all([loadVersions(), loadRoster()]);
+    })();
   }, []);
 
   useEffect(() => {
