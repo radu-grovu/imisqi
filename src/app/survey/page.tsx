@@ -145,6 +145,7 @@ export default function HospitalistSurveyPage() {
       } else {
         setError(message);
       }
+      setError(message);
     } finally {
       setLoadingScaffold(false);
     }
@@ -174,6 +175,7 @@ export default function HospitalistSurveyPage() {
       } else {
         setError(message);
       }
+      setError(message);
     } finally {
       setLoadingResponses(false);
     }
@@ -228,6 +230,7 @@ export default function HospitalistSurveyPage() {
       } else {
         setError(message);
       }
+      setError(message);
     } finally {
       setSaving(false);
     }
