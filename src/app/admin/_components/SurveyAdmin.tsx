@@ -60,29 +60,26 @@ export default function SurveyAdmin() {
   const [loadingReport, setLoadingReport] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
-  async function ensureSchema() {
-    try {
-      const { data } = await supabaseBrowser.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) return;
-      const res = await fetch('/api/admin/bootstrap-survey', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) {
-        const body = await res.text();
-        console.error('Failed to bootstrap survey schema', res.status, body);
-        setMsg('Unable to prepare survey tables. Please check server logs.');
-      }
-    } catch (err) {
-      console.error('Failed to bootstrap survey schema', err);
-      setMsg('Unable to prepare survey tables. Please check server logs.');
+  const missingTableMessage =
+    'Survey tables are missing. Run the SQL in supabase/survey-schema.sql on your Supabase project, then reload this page.';
+
+  function formatError(message: string | null | undefined): string {
+    if (!message) {
+      return 'Something went wrong. Please try again.';
     }
+    const missingPatterns = [
+      "Could not find the table 'public.survey_versions'",
+      "Could not find the table 'public.survey_questions'",
+      "Could not find the table 'public.survey_responses'",
+    ];
+    if (missingPatterns.some((pattern) => message.includes(pattern))) {
+      return missingTableMessage;
+    }
+    return message;
   }
 
   useEffect(() => {
     void (async () => {
-      await ensureSchema();
       await Promise.all([loadVersions(), loadRoster()]);
     })();
   }, []);
@@ -127,14 +124,15 @@ export default function SurveyAdmin() {
       .select('id, name, description, is_live, created_at, updated_at')
       .order('created_at', { ascending: true });
     if (error) {
-      setMsg(error.message);
-    } else {
-      const list = (data as SurveyVersion[]) ?? [];
-      setVersions(list);
-      if (!selectedVersionId) {
-        const live = list.find((v) => v.is_live);
-        setSelectedVersionId(live?.id ?? list[0]?.id ?? null);
-      }
+      setMsg(formatError(error.message));
+      setLoadingVersions(false);
+      return;
+    }
+    const list = (data as SurveyVersion[]) ?? [];
+    setVersions(list);
+    if (!selectedVersionId) {
+      const live = list.find((v) => v.is_live);
+      setSelectedVersionId(live?.id ?? list[0]?.id ?? null);
     }
     setLoadingVersions(false);
   }
@@ -148,8 +146,10 @@ export default function SurveyAdmin() {
       .eq('version_id', versionId)
       .order('sort_order', { ascending: true });
     if (error) {
-      setMsg(error.message);
+      setMsg(formatError(error.message));
       setQuestions([]);
+      setLoadingQuestions(false);
+      return;
     } else {
       setQuestions((data as SurveyQuestion[]) ?? []);
     }
@@ -173,8 +173,10 @@ export default function SurveyAdmin() {
     }
     const { data, error } = await query;
     if (error) {
-      setMsg(error.message);
+      setMsg(formatError(error.message));
       setResponses([]);
+      setLoadingReport(false);
+      return;
     } else {
       setResponses((data as SurveyResponse[]) ?? []);
     }
@@ -200,7 +202,7 @@ export default function SurveyAdmin() {
       .select('id, name, description, is_live, created_at, updated_at')
       .single();
     if (error) {
-      setMsg(error.message);
+      setMsg(formatError(error.message));
       return;
     }
     setVersions((prev) => [...prev, data as SurveyVersion]);
@@ -220,8 +222,9 @@ export default function SurveyAdmin() {
       .from('survey_versions')
       .update(updates)
       .eq('id', selectedVersion.id);
+
     if (error) {
-      setMsg(error.message);
+      setMsg(formatError(error.message));
       return;
     }
     setVersions((prev) =>
@@ -233,16 +236,14 @@ export default function SurveyAdmin() {
 
   async function setVersionLive(id: string) {
     setMsg(null);
-    await supabaseBrowser
-      .from('survey_versions')
-      .update({ is_live: false })
-      .neq('id', id);
+    await supabaseBrowser.from('survey_versions').update({ is_live: false }).neq('id', id);
+
     const { error } = await supabaseBrowser
       .from('survey_versions')
       .update({ is_live: true })
       .eq('id', id);
     if (error) {
-      setMsg(error.message);
+      setMsg(formatError(error.message));
       return;
     }
     setVersions((prev) =>
@@ -267,8 +268,9 @@ export default function SurveyAdmin() {
       .insert(payload)
       .select('id, prompt, sort_order')
       .single();
+
     if (error) {
-      setMsg(error.message);
+      setMsg(formatError(error.message));
       return;
     }
     setQuestions((prev) => [...prev, data as SurveyQuestion]);
@@ -289,8 +291,9 @@ export default function SurveyAdmin() {
       .from('survey_questions')
       .update({ prompt: q.prompt.trim() || 'Untitled question' })
       .eq('id', id);
+
     if (error) {
-      setMsg(error.message);
+      setMsg(formatError(error.message));
       return;
     }
     setMsg('Question saved.');
@@ -304,8 +307,9 @@ export default function SurveyAdmin() {
       .from('survey_questions')
       .delete()
       .eq('id', id);
+
     if (error) {
-      setMsg(error.message);
+      setMsg(formatError(error.message));
       return;
     }
     const remaining = questions.filter((q) => q.id !== id);
@@ -337,7 +341,7 @@ export default function SurveyAdmin() {
       );
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Failed to update order.';
-      setMsg(message);
+      setMsg(formatError(message));
     }
   }
 
