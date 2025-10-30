@@ -256,6 +256,11 @@ end $$;
 `;
 
   await runSql(sql);
+
+  const { error: refreshError } = await supabase.rpc('schema_cache_refresh');
+  if (refreshError) {
+    console.warn('Failed to refresh Supabase schema cache', refreshError);
+  }
 }
 
 export async function ensureSurveySchema(): Promise<void> {
