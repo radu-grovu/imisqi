@@ -140,6 +140,11 @@ export default function HospitalistSurveyPage() {
       setRoster(rosterRows);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Unable to load survey.';
+      if (message.includes("Could not find the table 'public.survey_versions'")) {
+        setError('Hospitalist survey is not configured yet. Please contact an administrator.');
+      } else {
+        setError(message);
+      }
       setError(message);
     } finally {
       setLoadingScaffold(false);
@@ -165,6 +170,11 @@ export default function HospitalistSurveyPage() {
       setResponses(map);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Unable to load your responses.';
+      if (message.includes("Could not find the table 'public.survey_responses'")) {
+        setError('Hospitalist survey storage is not ready yet. Please try again after an administrator opens the admin survey tab.');
+      } else {
+        setError(message);
+      }
       setError(message);
     } finally {
       setLoadingResponses(false);
@@ -215,6 +225,11 @@ export default function HospitalistSurveyPage() {
       setTimeout(() => setMessage(null), 2000);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Unable to save responses.';
+      if (message.includes("Could not find the table 'public.survey_responses'")) {
+        setError('Hospitalist survey storage is not ready yet. Please try again after an administrator opens the admin survey tab.');
+      } else {
+        setError(message);
+      }
       setError(message);
     } finally {
       setSaving(false);
