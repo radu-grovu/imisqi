@@ -19,15 +19,20 @@ export default function Header() {
     pathname?.startsWith('/auth');
 
   useEffect(() => {
-    (async () => {
-      const { data } = await supabaseBrowser.auth.getSession();
-      const session = data.session;
+    let isActive = true;
+
+    const applySession = async (session: Awaited<
+      ReturnType<typeof supabaseBrowser.auth.getSession>
+    >['data']['session']) => {
+      if (!isActive) return;
+
       if (!session) {
         setIsLoggedIn(false);
         setIsAdmin(false);
         setInitials('');
         return;
       }
+
       setIsLoggedIn(true);
 
       // Get profile (initials, is_admin)
@@ -35,31 +40,57 @@ export default function Header() {
         .from('profiles')
         .select('initials, is_admin')
         .eq('id', session.user.id)
-        .single();
+        .maybeSingle();
 
-      const userInitials =
-        prof?.initials ??
-        (session.user.email ? session.user.email.split('@')[0] : '');
+      if (!isActive) return;
 
-      setInitials(userInitials?.toUpperCase() ?? '');
+      const fallbackInitials = session.user.email
+        ? session.user.email.split('@')[0]
+        : '';
+      const userInitials = (prof?.initials ?? fallbackInitials ?? '').toUpperCase();
+
+      setInitials(userInitials);
 
       // Admin rule: profile.is_admin OR roster.is_admin OR initials === 'RG'
-      let adminAccess = !!prof?.is_admin || userInitials?.toUpperCase() === 'RG';
+      let adminAccess = !!prof?.is_admin || userInitials === 'RG';
       if (!adminAccess && userInitials) {
         const { data: rosterRec } = await supabaseBrowser
           .from('roster')
           .select('is_admin')
-          .eq('initials', userInitials.toUpperCase())
+          .eq('initials', userInitials)
           .maybeSingle();
+
+        if (!isActive) return;
+
         if (rosterRec?.is_admin) adminAccess = true;
       }
+      if (!isActive) return;
       setIsAdmin(adminAccess);
-    })();
+    };
+
+    supabaseBrowser.auth.getSession().then(({ data }) => {
+      void applySession(data.session);
+    });
+
+    const { data: listener } = supabaseBrowser.auth.onAuthStateChange(
+      (_event, session) => {
+        void applySession(session);
+      }
+    );
+
+    return () => {
+      isActive = false;
+      listener?.subscription.unsubscribe();
+    };
   }, []);
 
   async function signOut() {
     await supabaseBrowser.auth.signOut();
+    setIsLoggedIn(false);
+    setIsAdmin(false);
+    setInitials('');
     router.replace('/');
+    router.refresh();
   }
 
   return (
