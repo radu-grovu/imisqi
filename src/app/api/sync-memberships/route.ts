@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/supabaseAdmin';
 
 export async function POST() {
   // We cannot read the user on the server without cookies parsing in this minimal setup.

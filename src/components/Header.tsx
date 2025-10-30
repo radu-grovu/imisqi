@@ -120,8 +120,8 @@ export default function Header() {
             <Link href="/delay" className="text-gray-600 hover:text-gray-900">
               Delays
             </Link>
-            <Link href="/rankings" className="text-gray-600 hover:text-gray-900">
-              Hospitalist Rankings <span className="ml-1 align-middle inline-block text-[10px] px-1 py-[1px] rounded bg-yellow-200 text-yellow-800 font-semibold">BETA</span>
+            <Link href="/survey" className="text-gray-600 hover:text-gray-900">
+              Hospitalist Survey
             </Link>
             <Link href="/ideas" className="text-gray-600 hover:text-gray-900">
               Ideas
