@@ -1,81 +1,3 @@
-import { getSupabaseAdmin } from './supabaseAdmin';
-
-let bootstrapPromise: Promise<void> | null = null;
-
-function requireEnv(name: string): string {
-  const value = process.env[name];
-  if (!value) {
-    throw new Error(`Environment variable ${name} is not configured`);
-  }
-  return value;
-}
-
-async function runSql(sql: string): Promise<void> {
-  const baseUrl = requireEnv('NEXT_PUBLIC_SUPABASE_URL').replace(/\/$/, '');
-  const serviceKey = requireEnv('SUPABASE_SERVICE_ROLE_KEY');
-
-  const endpoints: { url: string; payloadKey: string }[] = [
-    { url: `${baseUrl}/rest/v1/rpc/exec_sql`, payloadKey: 'query' },
-    { url: `${baseUrl}/rest/v1/rpc/exec_sql`, payloadKey: 'sql' },
-    { url: `${baseUrl}/rest/v1/rpc/pg_execute_sql`, payloadKey: 'query' },
-    { url: `${baseUrl}/rest/v1/rpc/pg_execute_sql`, payloadKey: 'sql' },
-    { url: `${baseUrl}/rest/v1/rpc/query`, payloadKey: 'query' },
-    { url: `${baseUrl}/rest/v1/query`, payloadKey: 'query' },
-    { url: `${baseUrl}/rest/v1`, payloadKey: 'query' },
-  ];
-
-  const headers: Record<string, string> = {
-    apikey: serviceKey,
-    Authorization: `Bearer ${serviceKey}`,
-    'Content-Type': 'application/json',
-    Accept: 'application/json',
-    Prefer: 'params=single-object',
-  };
-
-  const errors: string[] = [];
-
-  for (const endpoint of endpoints) {
-    try {
-      const response = await fetch(endpoint.url, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ [endpoint.payloadKey]: sql }),
-      });
-      if (response.ok) {
-        return;
-      }
-      const text = await response.text();
-      errors.push(`${endpoint.url} => ${response.status} ${text}`);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      errors.push(`${endpoint.url} => ${message}`);
-    }
-  }
-
-  throw new Error(
-    'Failed to run Supabase SQL bootstrap. Tried the following endpoints:\n' +
-      errors.join('\n'),
-  );
-}
-
-async function ensureTables(): Promise<void> {
-  const supabase = getSupabaseAdmin();
-
-  const { error: probeError } = await supabase
-    .from('survey_versions')
-    .select('id')
-    .limit(1);
-
-  if (!probeError) {
-    // Table already exists; nothing else to do.
-    return;
-  }
-
-  if (!probeError.message.includes("Could not find the table 'public.survey_versions'")) {
-    throw probeError;
-  }
-
-  const sql = `
 create extension if not exists "pgcrypto";
 
 create or replace function public.has_admin_access()
@@ -190,85 +112,66 @@ alter table public.survey_questions enable row level security;
 alter table public.survey_responses enable row level security;
 
 do $$ begin
-  if not exists (select 1 from pg_policies where polname = 'survey_versions_select_all') then
+  if not exists (select 1 from pg_policies where policyname = 'survey_versions_select_all') then
     create policy "survey_versions_select_all" on public.survey_versions
       for select using (true);
   end if;
-  if not exists (select 1 from pg_policies where polname = 'survey_versions_admin_insert') then
+  if not exists (select 1 from pg_policies where policyname = 'survey_versions_admin_insert') then
     create policy "survey_versions_admin_insert" on public.survey_versions
       for insert with check (public.has_admin_access());
   end if;
-  if not exists (select 1 from pg_policies where polname = 'survey_versions_admin_update') then
+  if not exists (select 1 from pg_policies where policyname = 'survey_versions_admin_update') then
     create policy "survey_versions_admin_update" on public.survey_versions
       for update using (public.has_admin_access()) with check (public.has_admin_access());
   end if;
-  if not exists (select 1 from pg_policies where polname = 'survey_versions_admin_delete') then
+  if not exists (select 1 from pg_policies where policyname = 'survey_versions_admin_delete') then
     create policy "survey_versions_admin_delete" on public.survey_versions
       for delete using (public.has_admin_access());
   end if;
 end $$;
 
 do $$ begin
-  if not exists (select 1 from pg_policies where polname = 'survey_questions_select_all') then
+  if not exists (select 1 from pg_policies where policyname = 'survey_questions_select_all') then
     create policy "survey_questions_select_all" on public.survey_questions
       for select using (true);
   end if;
-  if not exists (select 1 from pg_policies where polname = 'survey_questions_admin_insert') then
+  if not exists (select 1 from pg_policies where policyname = 'survey_questions_admin_insert') then
     create policy "survey_questions_admin_insert" on public.survey_questions
       for insert with check (public.has_admin_access());
   end if;
-  if not exists (select 1 from pg_policies where polname = 'survey_questions_admin_update') then
+  if not exists (select 1 from pg_policies where policyname = 'survey_questions_admin_update') then
     create policy "survey_questions_admin_update" on public.survey_questions
       for update using (public.has_admin_access()) with check (public.has_admin_access());
   end if;
-  if not exists (select 1 from pg_policies where polname = 'survey_questions_admin_delete') then
+  if not exists (select 1 from pg_policies where policyname = 'survey_questions_admin_delete') then
     create policy "survey_questions_admin_delete" on public.survey_questions
       for delete using (public.has_admin_access());
   end if;
 end $$;
 
 do $$ begin
-  if not exists (select 1 from pg_policies where polname = 'survey_responses_select_self') then
+  if not exists (select 1 from pg_policies where policyname = 'survey_responses_select_self') then
     create policy "survey_responses_select_self" on public.survey_responses
       for select using (respondent_id = auth.uid());
   end if;
-  if not exists (select 1 from pg_policies where polname = 'survey_responses_select_admin') then
+  if not exists (select 1 from pg_policies where policyname = 'survey_responses_select_admin') then
     create policy "survey_responses_select_admin" on public.survey_responses
       for select using (public.has_admin_access());
   end if;
-  if not exists (select 1 from pg_policies where polname = 'survey_responses_insert_self') then
+  if not exists (select 1 from pg_policies where policyname = 'survey_responses_insert_self') then
     create policy "survey_responses_insert_self" on public.survey_responses
       for insert with check (respondent_id = auth.uid());
   end if;
-  if not exists (select 1 from pg_policies where polname = 'survey_responses_update_self') then
+  if not exists (select 1 from pg_policies where policyname = 'survey_responses_update_self') then
     create policy "survey_responses_update_self" on public.survey_responses
       for update using (respondent_id = auth.uid()) with check (respondent_id = auth.uid());
   end if;
-  if not exists (select 1 from pg_policies where polname = 'survey_responses_delete_self') then
+  if not exists (select 1 from pg_policies where policyname = 'survey_responses_delete_self') then
     create policy "survey_responses_delete_self" on public.survey_responses
       for delete using (respondent_id = auth.uid());
   end if;
-  if not exists (select 1 from pg_policies where polname = 'survey_responses_admin_write') then
+  if not exists (select 1 from pg_policies where policyname = 'survey_responses_admin_write') then
     create policy "survey_responses_admin_write" on public.survey_responses
       for all using (public.has_admin_access()) with check (true);
   end if;
 end $$;
-`;
-
-  await runSql(sql);
-
-  const { error: refreshError } = await supabase.rpc('schema_cache_refresh');
-  if (refreshError) {
-    console.warn('Failed to refresh Supabase schema cache', refreshError);
-  }
-}
-
-export async function ensureSurveySchema(): Promise<void> {
-  if (!bootstrapPromise) {
-    bootstrapPromise = ensureTables();
-    bootstrapPromise.catch(() => {
-      bootstrapPromise = null;
-    });
-  }
-  return bootstrapPromise;
-}
