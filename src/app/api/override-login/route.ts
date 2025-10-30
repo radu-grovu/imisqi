@@ -1,13 +1,15 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-
-// Initialize a Supabase client with service role (admin) privileges
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-  process.env.SUPABASE_SERVICE_ROLE_KEY || ''
-);
+import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 
 export async function POST(request: Request) {
+  let supabase;
+  try {
+    supabase = getSupabaseAdmin();
+  } catch (err) {
+    console.error('Supabase admin client not configured', err);
+    return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 });
+  }
+
   try {
     const { initials, password } = await request.json();
     // Verify override password
@@ -17,13 +19,16 @@ export async function POST(request: Request) {
     const domain = process.env.NEXT_PUBLIC_SYNTHETIC_EMAIL_DOMAIN || 'imis.local';
     const email = `${initials}@${domain}`;
     // Generate a magiclink login for the given email (creates user if not exists)
-    const { data, error } = await supabaseAdmin.auth.admin.generateLink({
+    const { data, error } = await supabase.auth.admin.generateLink({
       type: 'magiclink',
-      email: email
+      email: email,
     });
     if (error) {
       console.error('Error generating magic link:', error);
-      return NextResponse.json({ error: error.message || 'Failed to generate login link' }, { status: 500 });
+      return NextResponse.json(
+        { error: error.message || 'Failed to generate login link' },
+        { status: 500 }
+      );
     }
     const tokenHash = data.properties?.hashed_token;
     if (!tokenHash) {
@@ -33,18 +38,18 @@ export async function POST(request: Request) {
     const userId = data.user?.id;
     if (userId) {
       // Look up full name and admin flag from roster
-      const { data: rosterEntry } = await supabaseAdmin
+      const { data: rosterEntry } = await supabase
         .from('roster')
         .select('full_name, is_admin')
         .eq('initials', initials)
         .single();
       const fullName = rosterEntry?.full_name || 'New User';
       const isAdmin = rosterEntry?.is_admin || false;
-      const { error: upsertError } = await supabaseAdmin.from('profiles').upsert({
+      const { error: upsertError } = await supabase.from('profiles').upsert({
         id: userId,
         initials: initials,
         full_name: fullName,
-        is_admin: isAdmin
+        is_admin: isAdmin,
       });
       if (upsertError) {
         console.error('Profile upsert error:', upsertError);
