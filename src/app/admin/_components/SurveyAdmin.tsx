@@ -60,48 +60,26 @@ export default function SurveyAdmin() {
   const [loadingReport, setLoadingReport] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
-  async function ensureSchema(): Promise<boolean> {
-    try {
-      const { data } = await supabaseBrowser.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) return false;
-      const res = await fetch('/api/admin/bootstrap-survey', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) {
-        const body = await res.text();
-        console.error('Failed to bootstrap survey schema', res.status, body);
-        setMsg('Unable to prepare survey tables. Please check server logs.');
-        return false;
-      }
-      return true;
-    } catch (err) {
-      console.error('Failed to bootstrap survey schema', err);
-      setMsg('Unable to prepare survey tables. Please check server logs.');
-      return false;
-    }
-  }
+  const missingTableMessage =
+    'Survey tables are missing. Run the SQL in supabase/survey-schema.sql on your Supabase project, then reload this page.';
 
-  async function ensureSchemaIfMissing(message: string): Promise<boolean> {
+  function formatError(message: string | null | undefined): string {
+    if (!message) {
+      return 'Something went wrong. Please try again.';
+    }
     const missingPatterns = [
       "Could not find the table 'public.survey_versions'",
       "Could not find the table 'public.survey_questions'",
       "Could not find the table 'public.survey_responses'",
     ];
-    if (!missingPatterns.some((pattern) => message.includes(pattern))) {
-      return false;
+    if (missingPatterns.some((pattern) => message.includes(pattern))) {
+      return missingTableMessage;
     }
-    const prepared = await ensureSchema();
-    if (prepared) {
-      setMsg(null);
-    }
-    return prepared;
+    return message;
   }
 
   useEffect(() => {
     void (async () => {
-      await ensureSchema();
       await Promise.all([loadVersions(), loadRoster()]);
     })();
   }, []);
@@ -138,7 +116,7 @@ export default function SurveyAdmin() {
     setRoster(data ?? []);
   }
 
-  async function loadVersions(allowRetry = true) {
+  async function loadVersions() {
     setLoadingVersions(true);
     setMsg(null);
     const { data, error } = await supabaseBrowser
@@ -146,11 +124,7 @@ export default function SurveyAdmin() {
       .select('id, name, description, is_live, created_at, updated_at')
       .order('created_at', { ascending: true });
     if (error) {
-      if (allowRetry && (await ensureSchemaIfMissing(error.message))) {
-        setLoadingVersions(false);
-        return loadVersions(false);
-      }
-      setMsg(error.message);
+      setMsg(formatError(error.message));
       setLoadingVersions(false);
       return;
     }
@@ -163,7 +137,7 @@ export default function SurveyAdmin() {
     setLoadingVersions(false);
   }
 
-  async function loadQuestions(versionId: string, allowRetry = true) {
+  async function loadQuestions(versionId: string) {
     setLoadingQuestions(true);
     setMsg(null);
     const { data, error } = await supabaseBrowser
@@ -172,11 +146,7 @@ export default function SurveyAdmin() {
       .eq('version_id', versionId)
       .order('sort_order', { ascending: true });
     if (error) {
-      if (allowRetry && (await ensureSchemaIfMissing(error.message))) {
-        setLoadingQuestions(false);
-        return loadQuestions(versionId, false);
-      }
-      setMsg(error.message);
+      setMsg(formatError(error.message));
       setQuestions([]);
       setLoadingQuestions(false);
       return;
@@ -186,12 +156,7 @@ export default function SurveyAdmin() {
     setLoadingQuestions(false);
   }
 
-  async function loadReport(
-    versionId: string,
-    fromDate: string,
-    toDate: string,
-    allowRetry = true,
-  ) {
+  async function loadReport(versionId: string, fromDate: string, toDate: string) {
     setLoadingReport(true);
     setMsg(null);
     let query = supabaseBrowser
@@ -208,11 +173,7 @@ export default function SurveyAdmin() {
     }
     const { data, error } = await query;
     if (error) {
-      if (allowRetry && (await ensureSchemaIfMissing(error.message))) {
-        setLoadingReport(false);
-        return loadReport(versionId, fromDate, toDate, false);
-      }
-      setMsg(error.message);
+      setMsg(formatError(error.message));
       setResponses([]);
       setLoadingReport(false);
       return;
@@ -235,22 +196,14 @@ export default function SurveyAdmin() {
       name: newVersionName.trim(),
       description: newVersionDescription.trim() || null,
     };
-    const insert = () =>
-      supabaseBrowser
-        .from('survey_versions')
-        .insert(payload)
-        .select('id, name, description, is_live, created_at, updated_at')
-        .single();
-
-    let { data, error } = await insert();
+    const { data, error } = await supabaseBrowser
+      .from('survey_versions')
+      .insert(payload)
+      .select('id, name, description, is_live, created_at, updated_at')
+      .single();
     if (error) {
-      if (await ensureSchemaIfMissing(error.message)) {
-        ({ data, error } = await insert());
-      }
-      if (error) {
-        setMsg(error.message);
-        return;
-      }
+      setMsg(formatError(error.message));
+      return;
     }
     setVersions((prev) => [...prev, data as SurveyVersion]);
     setSelectedVersionId((data as SurveyVersion).id);
@@ -265,21 +218,14 @@ export default function SurveyAdmin() {
       name: editVersionName.trim() || 'Untitled Survey',
       description: editVersionDescription.trim() || null,
     };
-    const updateVersion = () =>
-      supabaseBrowser
-        .from('survey_versions')
-        .update(updates)
-        .eq('id', selectedVersion.id);
+    const { error } = await supabaseBrowser
+      .from('survey_versions')
+      .update(updates)
+      .eq('id', selectedVersion.id);
 
-    let { error } = await updateVersion();
     if (error) {
-      if (await ensureSchemaIfMissing(error.message)) {
-        ({ error } = await updateVersion());
-      }
-      if (error) {
-        setMsg(error.message);
-        return;
-      }
+      setMsg(formatError(error.message));
+      return;
     }
     setVersions((prev) =>
       prev.map((v) => (v.id === selectedVersion.id ? { ...v, ...updates } : v)),
@@ -290,22 +236,15 @@ export default function SurveyAdmin() {
 
   async function setVersionLive(id: string) {
     setMsg(null);
-    const deactivateOthers = () =>
-      supabaseBrowser.from('survey_versions').update({ is_live: false }).neq('id', id);
-    const activateOne = () =>
-      supabaseBrowser.from('survey_versions').update({ is_live: true }).eq('id', id);
+    await supabaseBrowser.from('survey_versions').update({ is_live: false }).neq('id', id);
 
-    await deactivateOthers();
-
-    let { error } = await activateOne();
+    const { error } = await supabaseBrowser
+      .from('survey_versions')
+      .update({ is_live: true })
+      .eq('id', id);
     if (error) {
-      if (await ensureSchemaIfMissing(error.message)) {
-        ({ error } = await activateOne());
-      }
-      if (error) {
-        setMsg(error.message);
-        return;
-      }
+      setMsg(formatError(error.message));
+      return;
     }
     setVersions((prev) =>
       prev.map((v) => ({ ...v, is_live: v.id === id })),
@@ -324,22 +263,15 @@ export default function SurveyAdmin() {
       prompt: newQuestionPrompt.trim(),
       sort_order: sortOrder,
     };
-    const insert = () =>
-      supabaseBrowser
-        .from('survey_questions')
-        .insert(payload)
-        .select('id, prompt, sort_order')
-        .single();
+    const { data, error } = await supabaseBrowser
+      .from('survey_questions')
+      .insert(payload)
+      .select('id, prompt, sort_order')
+      .single();
 
-    let { data, error } = await insert();
     if (error) {
-      if (await ensureSchemaIfMissing(error.message)) {
-        ({ data, error } = await insert());
-      }
-      if (error) {
-        setMsg(error.message);
-        return;
-      }
+      setMsg(formatError(error.message));
+      return;
     }
     setQuestions((prev) => [...prev, data as SurveyQuestion]);
     setNewQuestionPrompt('');
@@ -355,21 +287,14 @@ export default function SurveyAdmin() {
     const q = questions.find((item) => item.id === id);
     if (!q) return;
     setMsg(null);
-    const updateQuestion = () =>
-      supabaseBrowser
-        .from('survey_questions')
-        .update({ prompt: q.prompt.trim() || 'Untitled question' })
-        .eq('id', id);
+    const { error } = await supabaseBrowser
+      .from('survey_questions')
+      .update({ prompt: q.prompt.trim() || 'Untitled question' })
+      .eq('id', id);
 
-    let { error } = await updateQuestion();
     if (error) {
-      if (await ensureSchemaIfMissing(error.message)) {
-        ({ error } = await updateQuestion());
-      }
-      if (error) {
-        setMsg(error.message);
-        return;
-      }
+      setMsg(formatError(error.message));
+      return;
     }
     setMsg('Question saved.');
     setTimeout(() => setMsg(null), 2000);
@@ -378,21 +303,14 @@ export default function SurveyAdmin() {
   async function deleteQuestion(id: string) {
     if (!confirm('Delete this question? Responses will also be removed.')) return;
     setMsg(null);
-    const removeQuestion = () =>
-      supabaseBrowser
-        .from('survey_questions')
-        .delete()
-        .eq('id', id);
+    const { error } = await supabaseBrowser
+      .from('survey_questions')
+      .delete()
+      .eq('id', id);
 
-    let { error } = await removeQuestion();
     if (error) {
-      if (await ensureSchemaIfMissing(error.message)) {
-        ({ error } = await removeQuestion());
-      }
-      if (error) {
-        setMsg(error.message);
-        return;
-      }
+      setMsg(formatError(error.message));
+      return;
     }
     const remaining = questions.filter((q) => q.id !== id);
     setQuestions(remaining);
@@ -423,9 +341,7 @@ export default function SurveyAdmin() {
       );
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Failed to update order.';
-      if (!(await ensureSchemaIfMissing(message))) {
-        setMsg(message);
-      }
+      setMsg(formatError(message));
     }
   }
 
