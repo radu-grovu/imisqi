@@ -112,65 +112,65 @@ alter table public.survey_questions enable row level security;
 alter table public.survey_responses enable row level security;
 
 do $$ begin
-  if not exists (select 1 from pg_policies where policyname = 'survey_versions_select_all') then
+  if not exists (select 1 from pg_policies where polname = 'survey_versions_select_all') then
     create policy "survey_versions_select_all" on public.survey_versions
       for select using (true);
   end if;
-  if not exists (select 1 from pg_policies where policyname = 'survey_versions_admin_insert') then
+  if not exists (select 1 from pg_policies where polname = 'survey_versions_admin_insert') then
     create policy "survey_versions_admin_insert" on public.survey_versions
       for insert with check (public.has_admin_access());
   end if;
-  if not exists (select 1 from pg_policies where policyname = 'survey_versions_admin_update') then
+  if not exists (select 1 from pg_policies where polname = 'survey_versions_admin_update') then
     create policy "survey_versions_admin_update" on public.survey_versions
       for update using (public.has_admin_access()) with check (public.has_admin_access());
   end if;
-  if not exists (select 1 from pg_policies where policyname = 'survey_versions_admin_delete') then
+  if not exists (select 1 from pg_policies where polname = 'survey_versions_admin_delete') then
     create policy "survey_versions_admin_delete" on public.survey_versions
       for delete using (public.has_admin_access());
   end if;
 end $$;
 
 do $$ begin
-  if not exists (select 1 from pg_policies where policyname = 'survey_questions_select_all') then
+  if not exists (select 1 from pg_policies where polname = 'survey_questions_select_all') then
     create policy "survey_questions_select_all" on public.survey_questions
       for select using (true);
   end if;
-  if not exists (select 1 from pg_policies where policyname = 'survey_questions_admin_insert') then
+  if not exists (select 1 from pg_policies where polname = 'survey_questions_admin_insert') then
     create policy "survey_questions_admin_insert" on public.survey_questions
       for insert with check (public.has_admin_access());
   end if;
-  if not exists (select 1 from pg_policies where policyname = 'survey_questions_admin_update') then
+  if not exists (select 1 from pg_policies where polname = 'survey_questions_admin_update') then
     create policy "survey_questions_admin_update" on public.survey_questions
       for update using (public.has_admin_access()) with check (public.has_admin_access());
   end if;
-  if not exists (select 1 from pg_policies where policyname = 'survey_questions_admin_delete') then
+  if not exists (select 1 from pg_policies where polname = 'survey_questions_admin_delete') then
     create policy "survey_questions_admin_delete" on public.survey_questions
       for delete using (public.has_admin_access());
   end if;
 end $$;
 
 do $$ begin
-  if not exists (select 1 from pg_policies where policyname = 'survey_responses_select_self') then
+  if not exists (select 1 from pg_policies where polname = 'survey_responses_select_self') then
     create policy "survey_responses_select_self" on public.survey_responses
       for select using (respondent_id = auth.uid());
   end if;
-  if not exists (select 1 from pg_policies where policyname = 'survey_responses_select_admin') then
+  if not exists (select 1 from pg_policies where polname = 'survey_responses_select_admin') then
     create policy "survey_responses_select_admin" on public.survey_responses
       for select using (public.has_admin_access());
   end if;
-  if not exists (select 1 from pg_policies where policyname = 'survey_responses_insert_self') then
+  if not exists (select 1 from pg_policies where polname = 'survey_responses_insert_self') then
     create policy "survey_responses_insert_self" on public.survey_responses
       for insert with check (respondent_id = auth.uid());
   end if;
-  if not exists (select 1 from pg_policies where policyname = 'survey_responses_update_self') then
+  if not exists (select 1 from pg_policies where polname = 'survey_responses_update_self') then
     create policy "survey_responses_update_self" on public.survey_responses
       for update using (respondent_id = auth.uid()) with check (respondent_id = auth.uid());
   end if;
-  if not exists (select 1 from pg_policies where policyname = 'survey_responses_delete_self') then
+  if not exists (select 1 from pg_policies where polname = 'survey_responses_delete_self') then
     create policy "survey_responses_delete_self" on public.survey_responses
       for delete using (respondent_id = auth.uid());
   end if;
-  if not exists (select 1 from pg_policies where policyname = 'survey_responses_admin_write') then
+  if not exists (select 1 from pg_policies where polname = 'survey_responses_admin_write') then
     create policy "survey_responses_admin_write" on public.survey_responses
       for all using (public.has_admin_access()) with check (true);
   end if;
